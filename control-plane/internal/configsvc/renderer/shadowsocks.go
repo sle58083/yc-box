@@ -13,7 +13,7 @@ type ShadowsocksRenderer struct{}
 
 func (r *ShadowsocksRenderer) Protocol() string { return "shadowsocks" }
 
-func (r *ShadowsocksRenderer) RenderInbound(_ *RenderContext, cfg model.InboundConfig, _ []ProxyUser) (map[string]any, error) {
+func (r *ShadowsocksRenderer) RenderInbound(_ *RenderContext, cfg model.InboundConfig, users []ProxyUser) (map[string]any, error) {
 	out := map[string]any{}
 	renderInboundCommon(out, cfg)
 
@@ -22,7 +22,16 @@ func (r *ShadowsocksRenderer) RenderInbound(_ *RenderContext, cfg model.InboundC
 		return nil, err
 	}
 	out[fMethod] = str(settings, fMethod)
-	out[fPassword] = str(settings, fPassword)
+	if cfg.IsUserInbound && len(users) > 0 {
+		// 多用户模式：每个代理用户一个密码（SS 多用户用 users[]，method 共享）。
+		us := make([]map[string]any, 0, len(users))
+		for _, u := range users {
+			us = append(us, map[string]any{fName: u.Name, fPassword: u.Password})
+		}
+		out[fUsers] = us
+	} else {
+		out[fPassword] = str(settings, fPassword)
+	}
 
 	if tr, err := renderTransport(cfg.Transport); err != nil {
 		return nil, err
@@ -60,6 +69,10 @@ func (r *ShadowsocksRenderer) ValidateInbound(cfg model.InboundConfig) error {
 	if str(settings, fMethod) == "" {
 		return fmt.Errorf("shadowsocks inbound: method 必填")
 	}
+	// is_user_inbound：密码由代理用户注入，settings 无需提供 password。
+	if cfg.IsUserInbound {
+		return nil
+	}
 	if str(settings, fPassword) == "" {
 		return fmt.Errorf("shadowsocks inbound: password 必填")
 	}
@@ -80,13 +93,18 @@ func (r *ShadowsocksRenderer) ValidateOutbound(cfg model.OutboundConfig) error {
 	return nil
 }
 
-func (r *ShadowsocksRenderer) SubscriptionURI(cfg model.OutboundConfig, _ ProxyUser) (string, error) {
+func (r *ShadowsocksRenderer) SubscriptionURI(cfg model.OutboundConfig, user ProxyUser) (string, error) {
 	settings, err := parseMap(cfg.Settings)
 	if err != nil {
 		return "", err
 	}
 	server, port := str(settings, fServer), portStr(settings, fServerPort)
-	method, password := str(settings, fMethod), str(settings, fPassword)
+	method := str(settings, fMethod)
+	// 优先用代理用户的密码；为空则回退 settings 静态密码。
+	password := user.Password
+	if password == "" {
+		password = str(settings, fPassword)
+	}
 	if server == "" || port == "" || method == "" || password == "" {
 		return "", fmt.Errorf("shadowsocks: 订阅 URI 缺少 server/port/method/password")
 	}
@@ -100,7 +118,7 @@ func (r *ShadowsocksRenderer) Meta() ProtocolMeta {
 		Directions:  []Direction{DirectionInbound, DirectionOutbound},
 		TLSAllowed:  []TLSMode{TLSModeNone},
 		TLSRequired: false,
-		MultiUser:   false,
+		MultiUser:   true,
 		Inbound: []FieldSchema{
 			{Key: "method", Label: "加密方式", Type: "select", Required: true, Default: defaultJSON("aes-128-gcm"), Options: []FieldOption{
 				{Label: "2022-blake3-aes-128-gcm", Value: "2022-blake3-aes-128-gcm"},
