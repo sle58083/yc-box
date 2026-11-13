@@ -147,5 +147,20 @@ func buildRoute(g GlobalSettings, rules []model.RoutingRule) map[string]any {
 	if final == "" {
 		final = "direct"
 	}
-	return map[string]any{kRules: rendered, kFinal: final}
+
+	route := map[string]any{kRules: rendered, kFinal: final}
+
+	// sing-box 1.14 要求 route.default_domain_resolver 必须指定（否则报
+	// "missing route.default_domain_resolver ... deprecated"）。默认指向
+	// 第一个 DNS server 的 tag（若无 DNS 则回退 dns-local）。
+	resolver := ""
+	if len(g.DNS.Servers) > 0 {
+		resolver = g.DNS.Servers[0].Tag
+	}
+	if resolver == "" {
+		resolver = "dns-local"
+	}
+	route["default_domain_resolver"] = resolver
+
+	return route
 }
