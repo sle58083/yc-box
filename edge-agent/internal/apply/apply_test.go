@@ -6,17 +6,30 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/singbox-panel/edge-agent/internal/proc"
 )
 
 type fakeSupervisor struct {
 	reloadCalls int
+	startCalls  int
 	healthOk    bool
 	graceful    bool
+	reloadErr   error
+	startErr    error
 }
 
 func (f *fakeSupervisor) Reload(context.Context) (bool, error) {
 	f.reloadCalls++
+	if f.reloadErr != nil {
+		return f.graceful, f.reloadErr
+	}
 	return f.graceful, nil
+}
+
+func (f *fakeSupervisor) Start(context.Context) error {
+	f.startCalls++
+	return f.startErr
 }
 
 func (f *fakeSupervisor) HealthCheck(context.Context) error {
@@ -84,5 +97,29 @@ func TestApplyHealthFailedRollback(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(cfg); string(b) != "old-config" {
 		t.Fatalf("回滚后应恢复旧配置")
+	}
+}
+
+func TestApplyFirstStartWhenNotRunning(t *testing.T) {
+	dir := t.TempDir()
+	sup := &fakeSupervisor{
+		healthOk:  true,
+		reloadErr: proc.ErrNotRunning, // 首次下发：sing-box 未运行
+	}
+	a := NewApplyer(sup, dir, nil)
+	a.SetPrecheck(func(context.Context, []byte) error { return nil })
+
+	status, graceful, err := a.Apply(context.Background(), []byte(`{"inbounds":[]}`))
+	if err != nil {
+		t.Fatalf("首次启动应成功: %v", err)
+	}
+	if status != StatusSuccess {
+		t.Fatalf("期望 success: %s", status)
+	}
+	if graceful {
+		t.Fatalf("首次启动应为冷启动 graceful=false")
+	}
+	if sup.startCalls != 1 {
+		t.Fatalf("应调用 Start 1 次: %d", sup.startCalls)
 	}
 }

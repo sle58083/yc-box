@@ -4,12 +4,14 @@ package apply
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"go.uber.org/zap"
 
+	"github.com/singbox-panel/edge-agent/internal/proc"
 	"github.com/singbox-panel/edge-agent/internal/singbox"
 )
 
@@ -23,6 +25,7 @@ const (
 // Supervisor 是 apply 依赖的生命周期接口（消费方定义，便于单测注入）。
 type Supervisor interface {
 	Reload(ctx context.Context) (graceful bool, err error)
+	Start(ctx context.Context) error
 	HealthCheck(ctx context.Context) error
 	BinaryPath() (string, error)
 }
@@ -81,9 +84,16 @@ func (a *Applyer) Apply(ctx context.Context, content []byte) (string, bool, erro
 		return StatusFailed, false, err
 	}
 
-	// 4. 生效。
+	// 4. 生效：若 sing-box 尚未运行（首次下发）则 Start，否则 Reload 热更新。
 	graceful, err := a.sup.Reload(ctx)
-	if err != nil {
+	if errors.Is(err, proc.ErrNotRunning) {
+		// 首次下发：sing-box 未启动，改为冷启动。
+		if serr := a.sup.Start(ctx); serr != nil {
+			_ = a.rollback(ctx)
+			return StatusRolledBack, false, serr
+		}
+		graceful = false
+	} else if err != nil {
 		_ = a.rollback(ctx)
 		return StatusRolledBack, graceful, err
 	}
