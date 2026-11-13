@@ -169,7 +169,7 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("jwt.issuer", "singbox-panel")
 	v.SetDefault("jwt.access_ttl", "15m")
-	v.SetDefault("jwt.refresh_ttl", "7d")
+	v.SetDefault("jwt.refresh_ttl", "168h") // 168h = 7 天；Go time.Duration 不支持 "d" 单位
 
 	v.SetDefault("crypto.key", "")
 
