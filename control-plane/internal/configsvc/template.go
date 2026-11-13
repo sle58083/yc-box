@@ -53,12 +53,12 @@ type DNSSettings struct {
 
 // DNSServer 单个 DNS 服务器。
 type DNSServer struct {
-	Type    string // udp / tcp / tls / https / h3 / quic（sing-box 1.12+ 新格式必需）
-	Tag     string
-	Server  string // 服务器地址（新格式字段，取代旧 address）
-	Port    int    // 服务器端口（0=用类型默认值）
-	Path    string // DoH 路径（https 类型默认 /dns-query）
-	Detour  string // 旧格式出站；新格式保留为空（由 dialer 控制）
+	Type   string // udp / tcp / tls / https / h3 / quic（sing-box 1.12+ 新格式必需）
+	Tag    string
+	Server string // 服务器地址（新格式字段，取代旧 address）
+	Port   int    // 服务器端口（0=用类型默认值）
+	Path   string // DoH 路径（https 类型默认 /dns-query）
+	Detour string // 旧格式出站；新格式保留为空（由 dialer 控制）
 }
 
 // DefaultGlobalSettings 返回默认全局配置（使用 sing-box 1.12+ 新 DNS 格式）。

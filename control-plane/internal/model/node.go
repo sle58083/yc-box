@@ -21,7 +21,7 @@ type Node struct {
 	AgentVersion   string          `gorm:"type:varchar(32)" json:"agent_version"`
 	SingboxVersion string          `gorm:"type:varchar(32)" json:"singbox_version"`
 	Status         string          `gorm:"type:varchar(16);index;not null;default:'pending'" json:"status"`
-	LastHeartbeat  *time.Time      `gorm:"type:timestamptz;index" json:"last_heartbeat"`
+	LastHeartbeat  *time.Time      `gorm:"type:datetime;index" json:"last_heartbeat"`
 	Tags           json.RawMessage `gorm:"type:jsonb" json:"tags"` // 标签数组
 }
 

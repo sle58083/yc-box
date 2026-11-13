@@ -11,7 +11,7 @@ import (
 // 表结构见 system_design.md §4.2「traffic_record」。使用组合主键而非 UUID。
 // proxy_user_id 可为空（节点级聚合），故不参与主键。
 type TrafficRecord struct {
-	Ts          time.Time `gorm:"type:timestamptz;not null;primaryKey" json:"ts"` // 时间桶
+	Ts          time.Time `gorm:"type:datetime;not null;primaryKey" json:"ts"` // 时间桶
 	NodeID      uuid.UUID `gorm:"type:uuid;not null;primaryKey" json:"node_id"`
 	InboundTag  string    `gorm:"type:varchar(64);not null;primaryKey" json:"inbound_tag"`
 	OutboundTag string    `gorm:"type:varchar(64);not null;primaryKey" json:"outbound_tag"`

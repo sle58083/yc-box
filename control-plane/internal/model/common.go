@@ -15,8 +15,8 @@ import (
 //   - created_at / updated_at 由 GORM 自动填充。
 type Base struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	CreatedAt time.Time `gorm:"type:timestamptz;not null" json:"created_at"`
-	UpdatedAt time.Time `gorm:"type:timestamptz;not null" json:"updated_at"`
+	CreatedAt time.Time `gorm:"type:datetime;not null" json:"created_at"`
+	UpdatedAt time.Time `gorm:"type:datetime;not null" json:"updated_at"`
 }
 
 // BeforeCreate 在插入前生成 UUID v4 主键，保证与 migrations/*.sql 的 uuid 列一致。

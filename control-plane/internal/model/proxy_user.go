@@ -20,7 +20,7 @@ type ProxyUser struct {
 	Remark       string     `gorm:"type:varchar(255)" json:"remark"`
 	QuotaBytes   int64      `gorm:"not null;default:-1" json:"quota_bytes"` // -1=无限
 	UsedBytes    int64      `gorm:"not null;default:0" json:"used_bytes"`   // 已用流量（聚合缓存）
-	ExpireAt     *time.Time `gorm:"type:timestamptz" json:"expire_at"`
+	ExpireAt     *time.Time `gorm:"type:datetime" json:"expire_at"`
 	Status       string     `gorm:"type:varchar(16);index;not null;default:'enabled'" json:"status"`
 	SubTokenHash string     `gorm:"type:varchar(64);index" json:"-"` // # 订阅令牌 SHA-256，明文仅创建返回
 }

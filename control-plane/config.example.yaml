@@ -5,19 +5,8 @@ server:
   mode: debug            # debug / release / test
 
 database:
-  host: 127.0.0.1
-  port: 5432
-  user: singbox
-  password: "singbox"
-  name: singbox_panel
-  sslmode: disable
-  timezone: UTC
-  # dsn: "host=127.0.0.1 port=5432 user=singbox password=singbox dbname=singbox_panel sslmode=disable TimeZone=UTC"
-
-redis:
-  addr: 127.0.0.1:6379
-  password: ""
-  db: 0
+  path: data/panel.db   # SQLite 数据文件路径（相对/绝对），首次启动自动创建目录
+  # dsn: "file:/opt/singbox-panel/data/panel.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
 
 jwt:
   secret: "change-me-to-a-long-random-secret"     # # 签名密钥，生产务必替换

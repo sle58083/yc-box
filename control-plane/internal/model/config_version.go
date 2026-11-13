@@ -20,7 +20,7 @@ type ConfigVersion struct {
 	Hash       string    `gorm:"type:varchar(64);index" json:"hash"`                                   // 明文 SHA-256
 	Status     string    `gorm:"type:varchar(16);not null;default:'draft'" json:"status"`
 	CreatedBy  uuid.UUID `gorm:"type:uuid" json:"created_by"` // 操作面板用户
-	CreatedAt  time.Time `gorm:"type:timestamptz;not null" json:"created_at"`
+	CreatedAt  time.Time `gorm:"type:datetime;not null" json:"created_at"`
 }
 
 // BeforeCreate 在插入前生成 UUID v4 主键。

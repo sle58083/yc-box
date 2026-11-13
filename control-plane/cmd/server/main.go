@@ -61,8 +61,8 @@ func main() {
 	}
 	codec := crypto.New(km)
 
-	// 4. 连库 + 迁移
-	db, err := store.New(cfg.Database.ConnectionString(), cfg.Log.Level)
+	// 4. 连库 + 迁移（SQLite 单文件，自动创建数据目录）
+	db, err := store.New(cfg.Database.SQLiteDSN(), cfg.Log.Level)
 	if err != nil {
 		log.Fatal("connect database failed", zap.Error(err))
 	}

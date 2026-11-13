@@ -17,8 +17,8 @@ curl -sSL https://raw.githubusercontent.com/sle58083/yc-box/main/deploy/install.
 
 1. 检查 Docker / Docker Compose（未安装时自动安装 Docker Engine 与 Compose v2 插件）；
 2. 下载 `docker-compose.yml` 与 `.env` 模板；
-3. 生成随机 `CRYPTO_KEY` / `JWT_SECRET` / `DB_PASSWORD` / `ADMIN_PASSWORD`；
-4. 启动 `postgres` / `redis` / `control-plane` / `web`；
+3. 生成随机 `CRYPTO_KEY` / `JWT_SECRET` / `ADMIN_PASSWORD`；
+4. 启动 `control-plane` / `web`（数据落 SQLite 单文件，无需外部数据库）；
 5. 等待健康检查通过；
 6. 自动在面板创建单机节点并回填 `AGENT_TOKEN`，拉起 `edge-agent`；
 7. 输出访问地址与初始账号密码。
@@ -58,7 +58,7 @@ curl -sSL https://raw.githubusercontent.com/sle58083/yc-box/main/deploy/install.
 | 变量 | 说明 |
 |---|---|
 | `PUBLIC_PORT` | 前端对外端口（默认 80） |
-| `DB_USER` / `DB_PASSWORD` / `DB_NAME` | PostgreSQL 连接信息 |
+| `DATABASE_PATH` | 容器内 SQLite 数据文件路径（默认 `/opt/singbox-panel/data/panel.db`） |
 | `CRYPTO_KEY` | AES-256 密钥（32 字节 hex），**生成后不可更换** |
 | `JWT_SECRET` | JWT 签名密钥 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 初始管理员账号密码 |
@@ -105,15 +105,15 @@ docker compose -f deploy/docker-compose.yml up -d --build
                     │   /ws/agent   → control-plane:8080 (WS)      │
                     └──────────────┬───────────────────────────────┘
                                    │ compose 内网
-        ┌──────────────┬───────────┼───────────────┬───────────────┐
-        │ postgres:15  │ redis:7   │ control-plane │ edge-agent    │
-        │ (数据卷)      │           │ :8080 (内网)  │ ws→control    │
-        └──────────────┴───────────┴───────────────┴───┬───────────┘
+                    ┌──────────────┼───────────────┬───────────────┐
+                    │ control-plane│ (SQLite 数据卷) │ edge-agent    │
+                    │ :8080 (内网)  │               │ ws→control    │
+                    └──────────────┴───────────────┴───┬───────────┘
                                                         │ 托管 sing-box
                                              宿主机映射 NODE_PORT_RANGE
 ```
 
-- 仅 `web` 对外暴露 `80`；`control-plane:8080`、`postgres`、`redis` 仅 compose 内网互通（可选在 compose 中打开 127.0.0.1:8080 便于调试）。
+- 仅 `web` 对外暴露 `80`；`control-plane:8080` 仅 compose 内网互通（可选在 compose 中打开 127.0.0.1:8080 便于调试）。SQLite 数据保存在 `panel_data` 数据卷中。
 - Agent 主动出站 `ws://control-plane:8080/ws/agent`，无需给 Agent 开入站端口。
 - nginx 对 `/ws/` 配置了 WebSocket `Upgrade`/`Connection` 头，这是 Agent 长连接能建立的关键。
 
@@ -143,5 +143,5 @@ ghcr.io/<owner>/singbox-panel-web:<tag>
 
 - **Agent 显示离线**：确认 `AGENT_TOKEN` 与面板节点令牌一致；可用 `--reprovision` 重建节点。
 - **入站端口不通**：面板入站端口必须落在 `NODE_PORT_RANGE`；改后需 `docker compose up -d edge-agent`。
-- **健康检查失败**：`docker compose logs control-plane` 查看，多为数据库未就绪或 `CRYPTO_KEY` 格式错误（须为 64 个 hex 字符）。
+- **健康检查失败**：`docker compose logs control-plane` 查看，多为 `CRYPTO_KEY` 格式错误（须为 64 个 hex 字符）或 SQLite 数据卷权限问题。
 - **无法 pull 镜像**：确认已发布镜像且 `IMAGE_PREFIX` 正确；或改用第 6 节源码构建。

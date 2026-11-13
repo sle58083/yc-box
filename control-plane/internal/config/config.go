@@ -16,7 +16,6 @@ import (
 type Config struct {
 	Server    ServerConfig    `mapstructure:"server"`
 	Database  DatabaseConfig  `mapstructure:"database"`
-	Redis     RedisConfig     `mapstructure:"redis"`
 	JWT       JWTConfig       `mapstructure:"jwt"`
 	Crypto    CryptoConfig    `mapstructure:"crypto"`
 	Bootstrap BootstrapConfig `mapstructure:"bootstrap"`
@@ -30,23 +29,10 @@ type ServerConfig struct {
 	Mode string `mapstructure:"mode"` // gin 模式：debug / release / test
 }
 
-// DatabaseConfig PostgreSQL 配置，可直接提供 DSN 或离散字段。
+// DatabaseConfig SQLite 配置：文件路径或显式 DSN（二选一，dsn 优先）。
 type DatabaseConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	User     string `mapstructure:"user"`
-	Password string `mapstructure:"password"`
-	Name     string `mapstructure:"name"`
-	SSLMode  string `mapstructure:"sslmode"`
-	TimeZone string `mapstructure:"timezone"`
-	DSN      string `mapstructure:"dsn"` // 直接指定时优先使用
-}
-
-// RedisConfig 会话 / 心跳 / 缓存配置。
-type RedisConfig struct {
-	Addr     string `mapstructure:"addr"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
+	Path string `mapstructure:"path"` // SQLite 数据文件路径（相对/绝对），默认 data/panel.db
+	DSN  string `mapstructure:"dsn"`  // 直接指定 SQLite DSN（含 ":memory:" 等）时优先使用
 }
 
 // JWTConfig JWT 签发配置。
@@ -76,15 +62,12 @@ type LogConfig struct {
 	Format string `mapstructure:"format"` // json/console
 }
 
-// ConnectionString 拼装 PostgreSQL 连接串；优先使用显式 DSN。
-func (c *DatabaseConfig) ConnectionString() string {
+// SQLiteDSN 返回 SQLite 数据库文件路径或 DSN；优先使用显式 DSN。
+func (c *DatabaseConfig) SQLiteDSN() string {
 	if c.DSN != "" {
 		return c.DSN
 	}
-	return fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
-		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode, c.TimeZone,
-	)
+	return c.Path
 }
 
 // Addr 返回监听地址。
@@ -155,17 +138,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.mode", "debug")
 
-	v.SetDefault("database.host", "127.0.0.1")
-	v.SetDefault("database.port", 5432)
-	v.SetDefault("database.user", "singbox")
-	v.SetDefault("database.password", "")
-	v.SetDefault("database.name", "singbox_panel")
-	v.SetDefault("database.sslmode", "disable")
-	v.SetDefault("database.timezone", "UTC")
-
-	v.SetDefault("redis.addr", "127.0.0.1:6379")
-	v.SetDefault("redis.password", "")
-	v.SetDefault("redis.db", 0)
+	v.SetDefault("database.path", "data/panel.db")
 
 	v.SetDefault("jwt.issuer", "singbox-panel")
 	v.SetDefault("jwt.access_ttl", "15m")
@@ -190,11 +163,8 @@ func applyDerivedDefaults(cfg *Config) {
 	if cfg.Server.Mode == "" {
 		cfg.Server.Mode = "debug"
 	}
-	if cfg.Database.SSLMode == "" {
-		cfg.Database.SSLMode = "disable"
-	}
-	if cfg.Database.TimeZone == "" {
-		cfg.Database.TimeZone = "UTC"
+	if cfg.Database.Path == "" && cfg.Database.DSN == "" {
+		cfg.Database.Path = "data/panel.db"
 	}
 	if cfg.Bootstrap.AdminUsername == "" {
 		cfg.Bootstrap.AdminUsername = "admin"

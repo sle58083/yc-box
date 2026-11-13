@@ -1,7 +1,7 @@
 # sing-box 企业级代理面板 —— 单机自包含部署
 #
-# 服务拓扑：
-#   postgres(数据) / redis(会话缓存) / control-plane(控制面 8080，仅内网)
+# 服务拓扑（轻量化：SQLite 单文件替代 PostgreSQL，去掉 Redis）：
+#   control-plane(控制面 8080，仅内网，数据落 SQLite 数据卷)
 #   web(nginx，对外 80) / edge-agent(托管 sing-box，连控制面 WS，空配置等待下发)
 #
 # 使用：
@@ -13,31 +13,6 @@
 name: ${COMPOSE_PROJECT_NAME:-singbox-panel}
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${DB_USER:-singbox}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME:-singbox_panel}
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-
   control-plane:
     # 预构建镜像（install.sh 会先 docker compose pull）；未发布时回退到本地 build
     image: ${IMAGE_PREFIX:-ghcr.io/sle58083}/singbox-panel-control-plane:${IMAGE_TAG:-latest}
@@ -49,25 +24,15 @@ services:
       SBP_SERVER_HOST: "0.0.0.0"
       SBP_SERVER_PORT: "8080"
       SBP_SERVER_MODE: "release"
-      SBP_DATABASE_HOST: "postgres"
-      SBP_DATABASE_PORT: "5432"
-      SBP_DATABASE_USER: ${DB_USER:-singbox}
-      SBP_DATABASE_PASSWORD: ${DB_PASSWORD}
-      SBP_DATABASE_NAME: ${DB_NAME:-singbox_panel}
-      SBP_DATABASE_SSLMODE: "disable"
-      SBP_DATABASE_TIMEZONE: "UTC"
-      SBP_REDIS_ADDR: "redis:6379"
+      SBP_DATABASE_PATH: ${DATABASE_PATH:-/opt/singbox-panel/data/panel.db}
       SBP_JWT_SECRET: ${JWT_SECRET}
       SBP_CRYPTO_KEY: ${CRYPTO_KEY}
       SBP_BOOTSTRAP_ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       SBP_BOOTSTRAP_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       SBP_LOG_LEVEL: ${LOG_LEVEL:-info}
       SBP_LOG_FORMAT: ${LOG_FORMAT:-json}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    volumes:
+      - panel_data:/opt/singbox-panel/data
     # 控制面仅 compose 内网互通；如需宿主机直接调试可取消下面注释
     # ports:
     #   - "127.0.0.1:8080:8080"
@@ -117,5 +82,5 @@ services:
         condition: service_healthy
 
 volumes:
-  pg_data:
+  panel_data:
   agent_data:

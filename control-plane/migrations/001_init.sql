@@ -1,5 +1,9 @@
 -- =============================================================================
--- sing-box 企业级代理面板 — 初始迁移
+-- ⚠️ 本文件已停用（仅供参考）：项目已从 PostgreSQL 迁移到 SQLite。
+--    SQLite 下由 internal/store/db.go 的 AutoMigrate 自动建表，无需手动 SQL 迁移。
+--    以下 PostgreSQL DDL 仅作为历史参考，保留用于表结构对照。
+--
+-- sing-box 企业级代理面板 — 初始迁移（PostgreSQL 版本，已停用）
 -- 与 internal/store/db.go 的 AutoMigrate 等价（含外键约束与索引）。
 --
 -- 约定（system_design.md §9.7）：

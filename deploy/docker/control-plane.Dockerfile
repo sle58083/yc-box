@@ -23,7 +23,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 FROM alpine:3.19
 
 RUN apk add --no-cache ca-certificates tzdata \
-    && adduser -D -u 10001 appuser
+    && adduser -D -u 10001 appuser \
+    # SQLite 数据目录：预先创建并授权，保证挂载 named volume 后 appuser 可写
+    && mkdir -p /opt/singbox-panel/data \
+    && chown -R appuser:appuser /opt/singbox-panel
 
 WORKDIR /app
 

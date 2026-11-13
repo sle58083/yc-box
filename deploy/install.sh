@@ -354,20 +354,18 @@ ensure_env() {
   cp "$template" "$ENV_FILE"
 
   # 自动生成强随机值（仅当模板中对应键为空）
-  local dbpass crypto jwt adminpass
-  dbpass="$(rand_hex 16)"
+  local crypto jwt adminpass
   crypto="$(rand_hex 32)"
   jwt="$(rand_hex 32)"
   adminpass="$(rand_hex 8)"
 
-  env_set DB_PASSWORD "$dbpass"
   env_set CRYPTO_KEY "$crypto"
   env_set JWT_SECRET "$jwt"
   if [ -z "$(env_get ADMIN_PASSWORD)" ]; then
     env_set ADMIN_PASSWORD "$adminpass"
   fi
   chmod 600 "$ENV_FILE"
-  info "已生成 ${ENV_FILE}（含随机 DB_PASSWORD / CRYPTO_KEY / JWT_SECRET / ADMIN_PASSWORD）"
+  info "已生成 ${ENV_FILE}（含随机 CRYPTO_KEY / JWT_SECRET / ADMIN_PASSWORD）"
 }
 
 # ------------------------------------------------------------------------------
@@ -425,8 +423,8 @@ do_install() {
   $COMPOSE pull >/dev/null 2>&1 || warn "拉取预构建镜像失败，将回退到本地构建（请确认 IMAGE_PREFIX 已指向已发布的镜像仓库，或本目录存在源码）"
 
   # 2) 先启动核心服务（不含 edge-agent），等待健康
-  info "启动核心服务（postgres/redis/control-plane/web）..."
-  $COMPOSE up -d postgres redis control-plane web
+  info "启动核心服务（control-plane/web）..."
+  $COMPOSE up -d control-plane web
 
   info "等待面板健康检查（http://127.0.0.1:${public_port}/healthz）..."
   if ! wait_http "http://127.0.0.1:${public_port}/healthz"; then

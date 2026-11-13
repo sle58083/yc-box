@@ -231,11 +231,28 @@ func inboundTagExists(ctx context.Context, db *gorm.DB, groupID uuid.UUID, nodeI
 }
 
 // checkInboundReferences 删除入站前检查路由规则引用。
+//
+// SQLite 无 PostgreSQL 的 jsonb @> 包含运算符（且 inbound_tags 在 SQLite 下为 BLOB），
+// 故改为读取引用列表后在应用层判断包含关系。面板路由规则规模有限，性能可接受。
 func checkInboundReferences(ctx context.Context, db *gorm.DB, tag string) error {
-	var cnt int64
+	var rules []model.RoutingRule
 	if err := db.WithContext(ctx).Model(&model.RoutingRule{}).
-		Where("inbound_tags @> ?", mustJSONArray(tag)).Count(&cnt).Error; err != nil {
+		Select("inbound_tags").Find(&rules).Error; err != nil {
 		return err
+	}
+
+	cnt := 0
+	for _, r := range rules {
+		var tags []string
+		if err := json.Unmarshal(r.InboundTags, &tags); err != nil {
+			continue
+		}
+		for _, t := range tags {
+			if t == tag {
+				cnt++
+				break
+			}
+		}
 	}
 	if cnt > 0 {
 		return ValidationErrorf("入站 %q 被 %d 条路由规则引用，禁止删除", tag, cnt)
@@ -253,10 +270,4 @@ func checkOutboundReferences(ctx context.Context, db *gorm.DB, tag string) error
 		return ValidationErrorf("出站 %q 被 %d 条路由规则引用，禁止删除", tag, cnt)
 	}
 	return nil
-}
-
-// mustJSONArray 生成 PostgreSQL jsonb 数组字面量（用于 @> 包含判断）。
-func mustJSONArray(v string) string {
-	b, _ := json.Marshal([]string{v})
-	return string(b)
 }
