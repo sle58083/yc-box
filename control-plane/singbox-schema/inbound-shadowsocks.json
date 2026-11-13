@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "sing-box shadowsocks inbound element",
   "type": "object",
-  "required": ["type", "tag", "listen", "listen_port", "method", "password"],
+  "required": ["type", "tag", "listen", "listen_port", "method"],
   "properties": {
     "type": { "const": "shadowsocks" },
     "tag": { "type": "string" },
@@ -10,7 +10,21 @@
     "listen_port": { "type": "integer" },
     "method": { "type": "string" },
     "password": { "type": "string" },
+    "users": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "password": { "type": "string" }
+        }
+      }
+    },
     "transport": { "type": "object" }
   },
+  "anyOf": [
+    { "required": ["password"] },
+    { "required": ["users"] }
+  ],
   "additionalProperties": true
 }
