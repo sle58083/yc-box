@@ -1,185 +1,195 @@
-// 前端本地协议枚举与字段元数据（MVP）。
-// TODO(P1)：后端实现 GET /protocols 后，改为从后端下发 Meta()，避免前后端漂移。
+import type { ProtocolFieldMeta, ProtocolMeta } from '../api/protocols'
 
-export interface ProtocolField {
-  key: string
-  label: string
-  type: 'text' | 'number' | 'duration' | 'select' | 'array' | 'bool'
-  required?: boolean
-  placeholder?: string
-  options?: { label: string; value: string }[]
-}
+// 本地协议元数据（fallback）：当 GET /api/v1/protocols 不可用时使用。
+// 结构必须与后端 renderer.ProtocolMeta 对齐；运行时优先使用后端下发数据。
 
-export interface ProtocolMeta {
-  protocol: string
-  label: string
-  inbound: ProtocolField[]
-  outbound: ProtocolField[]
-}
-
-const commonOutboundServer: ProtocolField[] = [
-  { key: 'server', label: '服务器地址', type: 'text', required: true },
-  { key: 'server_port', label: '端口', type: 'number', required: true },
+const outboundServer: ProtocolFieldMeta[] = [
+  { key: 'server', label: '服务器地址', type: 'text', required: true, encrypt: false },
+  { key: 'server_port', label: '端口', type: 'number', required: true, encrypt: false },
 ]
 
-export const PROTOCOLS: ProtocolMeta[] = [
+const shadowsocksMethods = [
+  { label: '2022-blake3-aes-128-gcm', value: '2022-blake3-aes-128-gcm' },
+  { label: '2022-blake3-aes-256-gcm', value: '2022-blake3-aes-256-gcm' },
+  { label: 'aes-128-gcm', value: 'aes-128-gcm' },
+  { label: 'aes-256-gcm', value: 'aes-256-gcm' },
+  { label: 'chacha20-ietf-poly1305', value: 'chacha20-ietf-poly1305' },
+]
+
+const congestionControl = [
+  { label: 'cubic', value: 'cubic' },
+  { label: 'new_reno', value: 'new_reno' },
+  { label: 'bbr', value: 'bbr' },
+]
+
+export const LOCAL_PROTOCOLS: ProtocolMeta[] = [
   {
     protocol: 'vless',
-    label: 'VLESS',
-    inbound: [
-      { key: 'flow', label: 'Flow', type: 'text', placeholder: 'xtls-rprx-vision' },
-    ],
+    directions: ['inbound', 'outbound'],
+    inbound: [{ key: 'flow', label: 'Flow', type: 'text', required: false, encrypt: false }],
     outbound: [
-      ...commonOutboundServer,
-      { key: 'uuid', label: 'UUID', type: 'text', required: true },
-      { key: 'flow', label: 'Flow', type: 'text' },
+      ...outboundServer,
+      { key: 'uuid', label: 'UUID', type: 'text', required: true, encrypt: true },
+      { key: 'flow', label: 'Flow', type: 'text', required: false, encrypt: false },
     ],
+    tls_allowed: ['none', 'plain', 'reality', 'ech'],
+    tls_required: false,
+    multi_user: true,
   },
   {
     protocol: 'vmess',
-    label: 'VMess',
-    inbound: [{ key: 'alter_id', label: 'Alter ID', type: 'number' }],
+    directions: ['inbound', 'outbound'],
+    inbound: [{ key: 'alter_id', label: 'Alter ID', type: 'number', required: false, encrypt: false, default: 0 }],
     outbound: [
-      ...commonOutboundServer,
-      { key: 'uuid', label: 'UUID', type: 'text', required: true },
-      { key: 'alter_id', label: 'Alter ID', type: 'number' },
+      ...outboundServer,
+      { key: 'uuid', label: 'UUID', type: 'text', required: true, encrypt: true },
+      { key: 'alter_id', label: 'Alter ID', type: 'number', required: false, encrypt: false, default: 0 },
     ],
+    tls_allowed: ['none'],
+    tls_required: false,
+    multi_user: true,
   },
   {
     protocol: 'trojan',
-    label: 'Trojan',
-    inbound: [{ key: 'password', label: '密码', type: 'text', required: true }],
+    directions: ['inbound', 'outbound'],
+    inbound: [{ key: 'password', label: '密码', type: 'text', required: true, encrypt: true }],
     outbound: [
-      ...commonOutboundServer,
-      { key: 'password', label: '密码', type: 'text', required: true },
+      ...outboundServer,
+      { key: 'password', label: '密码', type: 'text', required: true, encrypt: true },
     ],
+    tls_allowed: ['plain'],
+    tls_required: true,
+    multi_user: true,
   },
   {
     protocol: 'shadowsocks',
-    label: 'Shadowsocks',
+    directions: ['inbound', 'outbound'],
     inbound: [
-      {
-        key: 'method',
-        label: '加密方式',
-        type: 'select',
-        required: true,
-        options: [
-          { label: '2022-blake3-aes-128-gcm', value: '2022-blake3-aes-128-gcm' },
-          { label: '2022-blake3-aes-256-gcm', value: '2022-blake3-aes-256-gcm' },
-          { label: 'aes-128-gcm', value: 'aes-128-gcm' },
-          { label: 'aes-256-gcm', value: 'aes-256-gcm' },
-          { label: 'chacha20-ietf-poly1305', value: 'chacha20-ietf-poly1305' },
-        ],
-      },
-      { key: 'password', label: '密码', type: 'text', required: true },
+      { key: 'method', label: '加密方式', type: 'select', required: true, encrypt: false, default: 'aes-128-gcm', options: shadowsocksMethods },
+      { key: 'password', label: '密码', type: 'text', required: true, encrypt: true },
     ],
     outbound: [
-      ...commonOutboundServer,
-      { key: 'method', label: '加密方式', type: 'select', required: true },
-      { key: 'password', label: '密码', type: 'text', required: true },
+      ...outboundServer,
+      { key: 'method', label: '加密方式', type: 'select', required: true, encrypt: false, default: 'aes-128-gcm', options: shadowsocksMethods },
+      { key: 'password', label: '密码', type: 'text', required: true, encrypt: true },
     ],
+    tls_allowed: ['none'],
+    tls_required: false,
+    multi_user: false,
   },
   {
     protocol: 'hysteria2',
-    label: 'Hysteria2',
+    directions: ['inbound', 'outbound'],
     inbound: [
-      { key: 'password', label: '密码', type: 'text', required: true },
-      { key: 'masquerade', label: 'Masquerade', type: 'text' },
+      { key: 'password', label: '密码', type: 'text', required: true, encrypt: true },
+      { key: 'masquerade', label: 'Masquerade', type: 'text', required: false, encrypt: false },
     ],
     outbound: [
-      ...commonOutboundServer,
-      { key: 'password', label: '密码', type: 'text', required: true },
+      ...outboundServer,
+      { key: 'password', label: '密码', type: 'text', required: true, encrypt: true },
     ],
+    tls_allowed: ['plain'],
+    tls_required: true,
+    multi_user: true,
   },
   {
     protocol: 'tuic',
-    label: 'TUIC',
+    directions: ['inbound', 'outbound'],
     inbound: [
-      { key: 'uuid', label: 'UUID', type: 'text', required: true },
-      { key: 'password', label: '密码', type: 'text', required: true },
-      {
-        key: 'congestion_control',
-        label: '拥塞控制',
-        type: 'select',
-        options: [
-          { label: 'cubic', value: 'cubic' },
-          { label: 'new_reno', value: 'new_reno' },
-          { label: 'bbr', value: 'bbr' },
-        ],
-      },
+      { key: 'uuid', label: 'UUID', type: 'text', required: true, encrypt: true },
+      { key: 'password', label: '密码', type: 'text', required: true, encrypt: true },
+      { key: 'congestion_control', label: '拥塞控制', type: 'select', required: false, encrypt: false, default: 'cubic', options: congestionControl },
     ],
     outbound: [
-      ...commonOutboundServer,
-      { key: 'uuid', label: 'UUID', type: 'text', required: true },
-      { key: 'password', label: '密码', type: 'text', required: true },
-      {
-        key: 'congestion_control',
-        label: '拥塞控制',
-        type: 'select',
-        options: [
-          { label: 'cubic', value: 'cubic' },
-          { label: 'new_reno', value: 'new_reno' },
-          { label: 'bbr', value: 'bbr' },
-        ],
-      },
+      ...outboundServer,
+      { key: 'uuid', label: 'UUID', type: 'text', required: true, encrypt: true },
+      { key: 'password', label: '密码', type: 'text', required: true, encrypt: true },
+      { key: 'congestion_control', label: '拥塞控制', type: 'select', required: false, encrypt: false, default: 'cubic', options: congestionControl },
     ],
+    tls_allowed: ['plain'],
+    tls_required: true,
+    multi_user: true,
   },
   {
     protocol: 'anytls',
-    label: 'AnyTLS',
-    inbound: [
-      { key: 'padding_scheme', label: 'Padding 方案（数组）', type: 'array', placeholder: '["tls-tcp"]' },
-    ],
+    directions: ['inbound', 'outbound'],
+    inbound: [{ key: 'padding_scheme', label: 'Padding 方案', type: 'array', required: false, encrypt: false }],
     outbound: [
-      ...commonOutboundServer,
-      { key: 'password', label: '密码（渲染时 base64）', type: 'text', required: true },
-      { key: 'idle_session_check_interval', label: '会话检查间隔', type: 'duration', placeholder: '30s' },
-      { key: 'idle_session_timeout', label: '会话空闲超时', type: 'duration', placeholder: '30s' },
-      { key: 'min_idle_session', label: '最小空闲会话数', type: 'number' },
-      { key: 'client_metadata', label: 'Client Metadata', type: 'text' },
+      ...outboundServer,
+      { key: 'password', label: '密码（渲染时 base64）', type: 'text', required: true, encrypt: true },
+      { key: 'idle_session_check_interval', label: '会话检查间隔', type: 'duration', required: false, encrypt: false },
+      { key: 'idle_session_timeout', label: '会话空闲超时', type: 'duration', required: false, encrypt: false },
+      { key: 'min_idle_session', label: '最小空闲会话数', type: 'number', required: false, encrypt: false },
+      { key: 'client_metadata', label: 'Client Metadata', type: 'text', required: false, encrypt: false },
     ],
+    tls_allowed: ['plain'],
+    tls_required: true,
+    multi_user: true,
   },
   {
     protocol: 'selector',
-    label: 'Selector',
+    directions: ['outbound'],
     inbound: [],
     outbound: [
-      { key: 'outbounds', label: '出站列表（数组）', type: 'array', required: true, placeholder: '["auto","direct"]' },
-      { key: 'default', label: '默认出站', type: 'text' },
+      { key: 'outbounds', label: '出站列表（数组）', type: 'array', required: true, encrypt: false },
+      { key: 'default', label: '默认出站', type: 'text', required: false, encrypt: false },
     ],
+    tls_allowed: [],
+    tls_required: false,
+    multi_user: false,
   },
   {
     protocol: 'urltest',
-    label: 'URLTest',
+    directions: ['outbound'],
     inbound: [],
     outbound: [
-      { key: 'outbounds', label: '出站列表（数组）', type: 'array', required: true },
-      { key: 'url', label: '探测 URL', type: 'text', required: true, placeholder: 'http://www.gstatic.com/generate_204' },
-      { key: 'interval', label: '探测间隔', type: 'duration' },
+      { key: 'outbounds', label: '出站列表（数组）', type: 'array', required: true, encrypt: false },
+      { key: 'url', label: '探测 URL', type: 'text', required: true, encrypt: false },
+      { key: 'interval', label: '探测间隔', type: 'duration', required: false, encrypt: false },
     ],
+    tls_allowed: [],
+    tls_required: false,
+    multi_user: false,
   },
   {
     protocol: 'direct',
-    label: 'Direct',
+    directions: ['outbound'],
     inbound: [],
     outbound: [],
+    tls_allowed: [],
+    tls_required: false,
+    multi_user: false,
   },
   {
     protocol: 'block',
-    label: 'Block',
+    directions: ['outbound'],
     inbound: [],
     outbound: [],
+    tls_allowed: [],
+    tls_required: false,
+    multi_user: false,
   },
 ]
 
-export function protocolMeta(protocol: string): ProtocolMeta | undefined {
-  return PROTOCOLS.find((p) => p.protocol === protocol)
+export function protocolMetaFrom(metas: ProtocolMeta[], protocol: string): ProtocolMeta | undefined {
+  return metas.find((p) => p.protocol === protocol)
 }
 
-export function inboundProtocols(): string[] {
-  return PROTOCOLS.filter((p) => p.inbound.length > 0 || ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'tuic', 'anytls'].includes(p.protocol)).map((p) => p.protocol)
+export function inboundProtocolsFrom(metas: ProtocolMeta[]): string[] {
+  return metas.filter((p) => p.directions.includes('inbound')).map((p) => p.protocol)
 }
 
-export function outboundProtocols(): string[] {
-  return PROTOCOLS.map((p) => p.protocol)
+export function outboundProtocolsFrom(metas: ProtocolMeta[]): string[] {
+  return metas.filter((p) => p.directions.includes('outbound')).map((p) => p.protocol)
+}
+
+// applyFieldDefaults 为缺失字段补默认值（如 shadowsocks 的 method、tuic 的 congestion_control）。
+export function applyFieldDefaults(fields: ProtocolFieldMeta[], value: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...value }
+  for (const f of fields) {
+    if (out[f.key] === undefined && f.default !== undefined) {
+      out[f.key] = f.default
+    }
+  }
+  return out
 }

@@ -102,7 +102,7 @@ func (r *ShadowsocksRenderer) Meta() ProtocolMeta {
 		TLSRequired: false,
 		MultiUser:   false,
 		Inbound: []FieldSchema{
-			{Key: "method", Label: "加密方式", Type: "select", Required: true, Options: []FieldOption{
+			{Key: "method", Label: "加密方式", Type: "select", Required: true, Default: defaultJSON("aes-128-gcm"), Options: []FieldOption{
 				{Label: "2022-blake3-aes-128-gcm", Value: "2022-blake3-aes-128-gcm"},
 				{Label: "2022-blake3-aes-256-gcm", Value: "2022-blake3-aes-256-gcm"},
 				{Label: "aes-128-gcm", Value: "aes-128-gcm"},
@@ -114,7 +114,13 @@ func (r *ShadowsocksRenderer) Meta() ProtocolMeta {
 		Outbound: []FieldSchema{
 			{Key: "server", Label: "服务器地址", Type: "text", Required: true},
 			{Key: "server_port", Label: "端口", Type: "number", Required: true},
-			{Key: "method", Label: "加密方式", Type: "select", Required: true},
+			{Key: "method", Label: "加密方式", Type: "select", Required: true, Default: defaultJSON("aes-128-gcm"), Options: []FieldOption{
+				{Label: "2022-blake3-aes-128-gcm", Value: "2022-blake3-aes-128-gcm"},
+				{Label: "2022-blake3-aes-256-gcm", Value: "2022-blake3-aes-256-gcm"},
+				{Label: "aes-128-gcm", Value: "aes-128-gcm"},
+				{Label: "aes-256-gcm", Value: "aes-256-gcm"},
+				{Label: "chacha20-ietf-poly1305", Value: "chacha20-ietf-poly1305"},
+			}},
 			{Key: "password", Label: "密码", Type: "text", Required: true, Encrypt: true},
 		},
 	}

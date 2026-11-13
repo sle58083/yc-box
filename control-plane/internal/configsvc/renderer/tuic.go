@@ -155,7 +155,7 @@ func (r *TUICRenderer) Meta() ProtocolMeta {
 		Inbound: []FieldSchema{
 			{Key: "uuid", Label: "UUID", Type: "text", Required: true, Encrypt: true},
 			{Key: "password", Label: "密码", Type: "text", Required: true, Encrypt: true},
-			{Key: "congestion_control", Label: "拥塞控制", Type: "select", Required: false, Options: []FieldOption{
+			{Key: "congestion_control", Label: "拥塞控制", Type: "select", Required: false, Default: defaultJSON("cubic"), Options: []FieldOption{
 				{Label: "cubic", Value: "cubic"},
 				{Label: "new_reno", Value: "new_reno"},
 				{Label: "bbr", Value: "bbr"},
@@ -166,7 +166,11 @@ func (r *TUICRenderer) Meta() ProtocolMeta {
 			{Key: "server_port", Label: "端口", Type: "number", Required: true},
 			{Key: "uuid", Label: "UUID", Type: "text", Required: true, Encrypt: true},
 			{Key: "password", Label: "密码", Type: "text", Required: true, Encrypt: true},
-			{Key: "congestion_control", Label: "拥塞控制", Type: "select", Required: false},
+			{Key: "congestion_control", Label: "拥塞控制", Type: "select", Required: false, Default: defaultJSON("cubic"), Options: []FieldOption{
+				{Label: "cubic", Value: "cubic"},
+				{Label: "new_reno", Value: "new_reno"},
+				{Label: "bbr", Value: "bbr"},
+			}},
 		},
 	}
 }

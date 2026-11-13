@@ -140,13 +140,13 @@ func (r *VMessRenderer) Meta() ProtocolMeta {
 		TLSRequired: false,
 		MultiUser:   true,
 		Inbound: []FieldSchema{
-			{Key: "alter_id", Label: "Alter ID", Type: "number", Required: false},
+			{Key: "alter_id", Label: "Alter ID", Type: "number", Required: false, Default: defaultJSON(0)},
 		},
 		Outbound: []FieldSchema{
 			{Key: "server", Label: "服务器地址", Type: "text", Required: true},
 			{Key: "server_port", Label: "端口", Type: "number", Required: true},
 			{Key: "uuid", Label: "UUID", Type: "text", Required: true, Encrypt: true},
-			{Key: "alter_id", Label: "Alter ID", Type: "number", Required: false},
+			{Key: "alter_id", Label: "Alter ID", Type: "number", Required: false, Default: defaultJSON(0)},
 		},
 	}
 }

@@ -37,3 +37,35 @@ func TestMetaDirections(t *testing.T) {
 		}
 	}
 }
+
+// TestMetaDefaults 验证关键枚举字段标注了默认值（供前端展示 + 提交兜底）。
+func TestMetaDefaults(t *testing.T) {
+	assertFieldDefault := func(proto, dir, key, want string) {
+		t.Helper()
+		r, ok := Get(proto)
+		if !ok {
+			t.Fatalf("协议 %q 未注册", proto)
+		}
+		m := r.Meta()
+		fields := m.Inbound
+		if dir == "outbound" {
+			fields = m.Outbound
+		}
+		for _, f := range fields {
+			if f.Key == key {
+				if string(f.Default) != want {
+					t.Fatalf("%s %s.%s Default = %s，期望 %s", proto, dir, key, f.Default, want)
+				}
+				return
+			}
+		}
+		t.Fatalf("%s %s 缺少字段 %s", proto, dir, key)
+	}
+
+	assertFieldDefault("shadowsocks", "inbound", "method", `"aes-128-gcm"`)
+	assertFieldDefault("shadowsocks", "outbound", "method", `"aes-128-gcm"`)
+	assertFieldDefault("tuic", "inbound", "congestion_control", `"cubic"`)
+	assertFieldDefault("tuic", "outbound", "congestion_control", `"cubic"`)
+	assertFieldDefault("vmess", "inbound", "alter_id", `0`)
+	assertFieldDefault("vmess", "outbound", "alter_id", `0`)
+}

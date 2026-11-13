@@ -34,6 +34,9 @@ func NewRouter(h *api.Handler, authSvc *auth.Service, auditSvc *audit.Service) *
 	{
 		authed.GET("/auth/me", h.Me)
 
+		// 协议元数据（前端动态表单）
+		authed.GET("/protocols", h.ListProtocols)
+
 		// 分组
 		authed.GET("/groups", middleware.RequirePermission(rbac.PermGroupRead), h.ListGroups)
 		authed.POST("/groups", middleware.RequirePermission(rbac.PermGroupWrite), h.CreateGroup)

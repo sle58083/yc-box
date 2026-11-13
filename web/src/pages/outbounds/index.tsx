@@ -5,8 +5,10 @@ import * as groupsApi from '../../api/groups'
 import type { OutboundConfig } from '../../api/types'
 import type { Group } from '../../api/groups'
 import { useAuthStore } from '../../store/auth'
-import { outboundProtocols } from '../../utils/protocols'
+import { useProtocolsStore } from '../../store/protocols'
+import { applyFieldDefaults, outboundProtocolsFrom, protocolMetaFrom } from '../../utils/protocols'
 import ProtocolForm from '../../components/ProtocolForm'
+import TlsForm from '../../components/TlsForm'
 import JsonEditor from '../../components/JsonEditor'
 
 export default function Outbounds() {
@@ -21,6 +23,8 @@ export default function Outbounds() {
   const [tls, setTls] = useState<Record<string, unknown> | null>(null)
   const [transport, setTransport] = useState<Record<string, unknown> | null>(null)
   const protocol = Form.useWatch('type', form) ?? 'direct'
+  const metas = useProtocolsStore((s) => s.metas)
+  const meta = protocolMetaFrom(metas, protocol)
 
   const load = () => {
     api.listOutbounds().then(setRows).catch(() => setRows([]))
@@ -49,7 +53,10 @@ export default function Outbounds() {
 
   const submit = async () => {
     const values = await form.validateFields()
-    const body = { ...values, settings, tls, transport }
+    const fields = meta?.outbound ?? []
+    const settingsFinal = applyFieldDefaults(fields, settings)
+    const tlsFinal = meta?.tls_required && tls == null ? { enabled: true } : tls
+    const body = { ...values, settings: settingsFinal, tls: tlsFinal, transport }
     try {
       if (editing) await api.updateOutbound(editing.id, body)
       else await api.createOutbound(body)
@@ -96,13 +103,19 @@ export default function Outbounds() {
             <Select options={groups.map((g) => ({ label: g.name, value: g.id }))} />
           </Form.Item>
           <Form.Item name="type" label="协议" rules={[{ required: true }]}>
-            <Select options={outboundProtocols().map((p) => ({ label: p, value: p }))} />
+            <Select options={outboundProtocolsFrom(metas).map((p) => ({ label: p, value: p }))} />
           </Form.Item>
           <Form.Item name="status" label="状态"><Select options={[{ label: 'enabled', value: 'enabled' }, { label: 'disabled', value: 'disabled' }]} /></Form.Item>
           <div style={{ marginBottom: 12 }}>
             <ProtocolForm protocol={protocol} direction="outbound" value={settings} onChange={setSettings} />
           </div>
-          <JsonEditor label="TLS" value={tls} onChange={setTls} />
+          <TlsForm
+            direction="outbound"
+            tlsAllowed={meta?.tls_allowed ?? []}
+            tlsRequired={meta?.tls_required ?? false}
+            value={tls}
+            onChange={setTls}
+          />
           <div style={{ height: 12 }} />
           <JsonEditor label="Transport" value={transport} onChange={setTransport} />
         </Form>

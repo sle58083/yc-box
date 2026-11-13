@@ -1,5 +1,7 @@
-import { Input, InputNumber, Select, Switch } from 'antd'
-import { protocolMeta, type ProtocolField } from '../utils/protocols'
+import { Input, InputNumber, Select, Switch, Tag } from 'antd'
+import type { ProtocolFieldMeta } from '../api/protocols'
+import { useProtocolsStore } from '../store/protocols'
+import { protocolMetaFrom } from '../utils/protocols'
 
 interface Props {
   protocol: string
@@ -8,10 +10,12 @@ interface Props {
   onChange: (settings: Record<string, unknown>) => void
 }
 
-// 动态协议专属字段表单：按协议元数据渲染 settings 字段。
+// 动态协议专属字段表单：按协议元数据（优先后端）渲染 settings 字段，
+// 并展示后端下发的默认值（如 shadowsocks 的加密方式）。
 export default function ProtocolForm({ protocol, direction, value, onChange }: Props) {
-  const meta = protocolMeta(protocol)
-  const fields: ProtocolField[] = direction === 'inbound' ? meta?.inbound ?? [] : meta?.outbound ?? []
+  const metas = useProtocolsStore((s) => s.metas)
+  const meta = protocolMetaFrom(metas, protocol)
+  const fields: ProtocolFieldMeta[] = direction === 'inbound' ? meta?.inbound ?? [] : meta?.outbound ?? []
 
   const set = (key: string, v: unknown) => {
     onChange({ ...value, [key]: v })
@@ -19,20 +23,27 @@ export default function ProtocolForm({ protocol, direction, value, onChange }: P
 
   return (
     <div>
-      {fields.map((f) => (
-        <div key={f.key} style={{ marginBottom: 12 }}>
-          <div style={{ marginBottom: 4, color: '#666' }}>
-            {f.label}
-            {f.required ? <span style={{ color: '#f5222d' }}> *</span> : null}
+      {fields.map((f) => {
+        const raw = value[f.key]
+        const effective = raw === undefined && f.default !== undefined ? f.default : raw
+        return (
+          <div key={f.key} style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 4, color: '#666' }}>
+              {f.label}
+              {f.required ? <span style={{ color: '#f5222d' }}> *</span> : null}
+              {f.default !== undefined ? (
+                <Tag style={{ marginLeft: 6 }} color="blue">默认: {String(f.default)}</Tag>
+              ) : null}
+            </div>
+            <FieldInput field={f} value={effective} onChange={(v) => set(f.key, v)} />
           </div>
-          <FieldInput field={f} value={value[f.key]} onChange={(v) => set(f.key, v)} />
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
 
-function FieldInput({ field, value, onChange }: { field: ProtocolField; value: unknown; onChange: (v: unknown) => void }) {
+function FieldInput({ field, value, onChange }: { field: ProtocolFieldMeta; value: unknown; onChange: (v: unknown) => void }) {
   switch (field.type) {
     case 'number':
       return <InputNumber style={{ width: '100%' }} value={value as number} onChange={(v) => onChange(v ?? 0)} />
@@ -43,7 +54,6 @@ function FieldInput({ field, value, onChange }: { field: ProtocolField; value: u
         <Select
           style={{ width: '100%' }}
           value={value as string}
-          placeholder={field.placeholder}
           options={field.options}
           onChange={onChange}
         />
@@ -53,7 +63,7 @@ function FieldInput({ field, value, onChange }: { field: ProtocolField; value: u
       return (
         <Input
           value={text}
-          placeholder={field.placeholder ?? '["a","b"]'}
+          placeholder='["a","b"]'
           onChange={(e) => {
             const s = e.target.value
             try {
@@ -65,7 +75,9 @@ function FieldInput({ field, value, onChange }: { field: ProtocolField; value: u
         />
       )
     }
-    default:
-      return <Input value={value as string} placeholder={field.placeholder} onChange={(e) => onChange(e.target.value)} />
+    default: {
+      const placeholder = typeof field.default === 'string' ? `默认: ${field.default}` : undefined
+      return <Input value={value as string} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+    }
   }
 }

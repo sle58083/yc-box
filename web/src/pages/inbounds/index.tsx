@@ -5,8 +5,10 @@ import * as groupsApi from '../../api/groups'
 import type { InboundConfig } from '../../api/types'
 import type { Group } from '../../api/groups'
 import { useAuthStore } from '../../store/auth'
-import { inboundProtocols } from '../../utils/protocols'
+import { useProtocolsStore } from '../../store/protocols'
+import { applyFieldDefaults, inboundProtocolsFrom, protocolMetaFrom } from '../../utils/protocols'
 import ProtocolForm from '../../components/ProtocolForm'
+import TlsForm from '../../components/TlsForm'
 import JsonEditor from '../../components/JsonEditor'
 
 export default function Inbounds() {
@@ -21,6 +23,8 @@ export default function Inbounds() {
   const [tls, setTls] = useState<Record<string, unknown> | null>(null)
   const [transport, setTransport] = useState<Record<string, unknown> | null>(null)
   const protocol = Form.useWatch('type', form) ?? 'vless'
+  const metas = useProtocolsStore((s) => s.metas)
+  const meta = protocolMetaFrom(metas, protocol)
 
   const load = () => {
     api.listInbounds().then(setRows).catch(() => setRows([]))
@@ -49,7 +53,10 @@ export default function Inbounds() {
 
   const submit = async () => {
     const values = await form.validateFields()
-    const body = { ...values, settings, tls, transport }
+    const fields = meta?.inbound ?? []
+    const settingsFinal = applyFieldDefaults(fields, settings)
+    const tlsFinal = meta?.tls_required && tls == null ? { enabled: true } : tls
+    const body = { ...values, settings: settingsFinal, tls: tlsFinal, transport }
     try {
       if (editing) await api.updateInbound(editing.id, body)
       else await api.createInbound(body)
@@ -99,7 +106,7 @@ export default function Inbounds() {
             <Select options={groups.map((g) => ({ label: g.name, value: g.id }))} />
           </Form.Item>
           <Form.Item name="type" label="协议" rules={[{ required: true }]}>
-            <Select options={inboundProtocols().map((p) => ({ label: p, value: p }))} />
+            <Select options={inboundProtocolsFrom(metas).map((p) => ({ label: p, value: p }))} />
           </Form.Item>
           <Form.Item name="listen" label="监听地址"><Input /></Form.Item>
           <Form.Item name="port" label="端口" rules={[{ required: true }]}><InputNumber min={1} max={65535} style={{ width: '100%' }} /></Form.Item>
@@ -108,7 +115,13 @@ export default function Inbounds() {
           <div style={{ marginBottom: 12 }}>
             <ProtocolForm protocol={protocol} direction="inbound" value={settings} onChange={setSettings} />
           </div>
-          <JsonEditor label="TLS" value={tls} onChange={setTls} />
+          <TlsForm
+            direction="inbound"
+            tlsAllowed={meta?.tls_allowed ?? []}
+            tlsRequired={meta?.tls_required ?? false}
+            value={tls}
+            onChange={setTls}
+          />
           <div style={{ height: 12 }} />
           <JsonEditor label="Transport" value={transport} onChange={setTransport} />
         </Form>

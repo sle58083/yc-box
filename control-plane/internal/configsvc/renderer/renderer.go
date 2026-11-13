@@ -73,14 +73,15 @@ const (
 )
 
 // ProtocolMeta 协议元数据，前端据此渲染动态表单与约束。
+// 该结构经 GET /api/v1/protocols 直接序列化下发，故字段带 json tag。
 type ProtocolMeta struct {
-	Protocol    string
-	Directions  []Direction
-	Inbound     []FieldSchema
-	Outbound    []FieldSchema
-	TLSAllowed  []TLSMode
-	TLSRequired bool
-	MultiUser   bool
+	Protocol    string        `json:"protocol"`
+	Directions  []Direction   `json:"directions"`
+	Inbound     []FieldSchema `json:"inbound"`
+	Outbound    []FieldSchema `json:"outbound"`
+	TLSAllowed  []TLSMode     `json:"tls_allowed"`
+	TLSRequired bool          `json:"tls_required"`
+	MultiUser   bool          `json:"multi_user"`
 }
 
 // FieldSchema 是前端动态表单的字段描述（JSON-schema 风格最小子集）。
@@ -98,6 +99,16 @@ type FieldSchema struct {
 type FieldOption struct {
 	Label string `json:"label"`
 	Value string `json:"value"`
+}
+
+// defaultJSON 将任意值序列化为 json.RawMessage，用于 FieldSchema.Default。
+// 序列化失败时返回 nil（前端视为无默认值）。
+func defaultJSON(v any) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // hasDirection 判断协议是否支持指定方向。
