@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
 # sing-box 企业级代理面板 —— 一键部署 / 升级 / 卸载脚本（对标 s-ui 体验）
+# 未检测到 Docker 时，会自动安装 Docker Engine 与 docker compose 插件（幂等，已安装则跳过）。
 #
 # 用法（一条命令）：
 #   curl -sSL https://raw.githubusercontent.com/sle58083/yc-box/main/deploy/install.sh | bash
@@ -146,10 +147,177 @@ wait_http() {
 # 环境准备
 # ------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------
+# Docker 环境保障：检测 → 自动安装 → 启动 daemon → 安装 compose 插件 → 验证
+# ------------------------------------------------------------------------------
+
+# 从 /etc/os-release 读取单个键值（去掉首尾引号）
+os_release_get() {
+  local key="$1" val
+  val="$(sed -n "s/^${key}=//p" /etc/os-release 2>/dev/null | head -1 || true)"
+  val="${val#\"}"; val="${val%\"}"
+  val="${val#\'}"; val="${val%\'}"
+  printf '%s' "$val"
+}
+
+# 识别发行版，写入全局变量 DISTRO_ID / DISTRO_LIKE / DISTRO_NAME
+detect_distro() {
+  DISTRO_ID=""; DISTRO_LIKE=""; DISTRO_NAME="Linux"
+  [ -r /etc/os-release ] || return 0
+  DISTRO_ID="$(os_release_get ID)"
+  DISTRO_LIKE="$(os_release_get ID_LIKE)"
+  DISTRO_NAME="$(os_release_get PRETTY_NAME)"
+  [ -n "$DISTRO_NAME" ] || DISTRO_NAME="$(os_release_get NAME)"
+  [ -n "$DISTRO_NAME" ] || DISTRO_NAME="Linux"
+}
+
+# 启动 docker daemon（优先 systemd，回退 sysvinit）
+start_docker() {
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl enable --now docker >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  if command -v service >/dev/null 2>&1; then
+    if service docker start >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# 下载并执行 get.docker.com 官方脚本安装 Docker
+install_docker() {
+  local tmp
+  tmp="$(mktemp)"
+  info "下载 Docker 官方安装脚本（https://get.docker.com）..."
+  if ! curl -fsSL --retry 3 https://get.docker.com -o "$tmp"; then
+    rm -f "$tmp"
+    err "下载 get.docker.com 失败（需可访问 https://get.docker.com）"
+    return 1
+  fi
+
+  info "执行 Docker 官方安装脚本（约 1~3 分钟，请耐心等待）..."
+  if ! sh "$tmp"; then
+    rm -f "$tmp"
+    err "Docker 官方安装脚本执行失败"
+    return 1
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
+# 下载并安装 docker compose 插件（Compose v2）
+install_compose_plugin() {
+  local arch latest url tmp dir
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64|amd64)  arch="x86_64" ;;
+    aarch64|arm64) arch="aarch64" ;;
+    armv7l)        arch="armv7" ;;
+    *)             return 1 ;;
+  esac
+
+  latest="$(curl -fsSL --max-time 10 https://api.github.com/repos/docker/compose/releases/latest 2>/dev/null \
+    | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true)"
+  [ -n "$latest" ] || latest="v2.24.7"
+
+  if [ "$(id -u)" = "0" ]; then
+    dir="/usr/local/lib/docker/cli-plugins"
+  else
+    dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+  fi
+  mkdir -p "$dir" || return 1
+
+  tmp="$(mktemp)"
+  url="https://github.com/docker/compose/releases/download/${latest}/docker-compose-linux-${arch}"
+  info "下载 docker compose 插件（${latest}）..."
+  if ! curl -fsSL --retry 3 "$url" -o "$tmp"; then
+    rm -f "$tmp"
+    err "下载 docker compose 插件失败（${url}）"
+    return 1
+  fi
+
+  if command -v install >/dev/null 2>&1; then
+    install -m 0755 "$tmp" "$dir/docker-compose" || { rm -f "$tmp"; return 1; }
+  else
+    cp "$tmp" "$dir/docker-compose" && chmod 0755 "$dir/docker-compose" || { rm -f "$tmp"; return 1; }
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
+# Docker 自动安装失败时的手动指引（发行版感知）
+docker_install_hint() {
+  local id="${DISTRO_ID:-}" like="${DISTRO_LIKE:-}"
+  err "Docker 自动安装失败。请手动安装并启动 Docker 后重试本脚本："
+  case "$id $like" in
+    *debian*|*ubuntu*)
+      err "  Debian/Ubuntu: apt-get update && apt-get install -y docker.io docker-compose-plugin && systemctl enable --now docker" ;;
+    *centos*|*rhel*|*fedora*|*rocky*|*almalinux*)
+      err "  RHEL/CentOS/Fedora: yum install -y docker-ce docker-compose-plugin && systemctl enable --now docker" ;;
+    *)
+      err "  通用方式: curl -fsSL https://get.docker.com | sh && systemctl enable --now docker" ;;
+  esac
+  err "  官方文档: https://docs.docker.com/engine/install/"
+  exit 1
+}
+
+# 确保 Docker 可用（幂等：已安装且 daemon 运行则跳过；否则自动安装并启动）
+ensure_docker() {
+  local docker_err=""
+  if docker version >/dev/null 2>&1; then
+    info "检测到 Docker 且 daemon 运行中"
+    return 0
+  fi
+
+  # 已安装但 daemon 未运行（或当前用户无权限）的情况
+  if command -v docker >/dev/null 2>&1; then
+    docker_err="$(docker version 2>&1 || true)"
+    if printf '%s' "$docker_err" | grep -qi "permission denied"; then
+      die "当前用户无权限访问 Docker。请以 root 运行本脚本，或将当前用户加入 docker 组后重新登录"
+    fi
+    warn "Docker 已安装但 daemon 未运行，尝试启动 ..."
+    if start_docker && docker version >/dev/null 2>&1; then
+      info "Docker daemon 启动成功"
+      return 0
+    fi
+    warn "Docker daemon 启动失败，尝试重新安装 Docker ..."
+  fi
+
+  detect_distro
+  info "未检测到可用的 Docker，将在「${DISTRO_NAME}」上自动安装 Docker ..."
+
+  if ! install_docker; then
+    docker_install_hint
+  fi
+
+  info "Docker 安装完成，启动 daemon ..."
+  start_docker || warn "无法自动启动 Docker daemon，将尝试继续验证"
+
+  if ! docker version >/dev/null 2>&1; then
+    docker_install_hint
+  fi
+  info "Docker 安装并启动成功"
+}
+
+# 确保 docker compose 可用（幂等：已有则跳过；缺失则安装 Compose v2 插件）
+ensure_compose() {
+  if detect_compose; then
+    return 0
+  fi
+  info "未检测到 docker compose，尝试自动安装 Compose v2 插件 ..."
+  if install_compose_plugin && detect_compose; then
+    info "docker compose 插件安装成功"
+    return 0
+  fi
+  die "未检测到 Docker Compose。请安装 docker compose 插件（https://docs.docker.com/compose/install/）"
+}
+
 check_deps() {
   command -v curl >/dev/null 2>&1 || die "未检测到 curl，请先安装（apt-get install curl / yum install curl）"
-  docker version >/dev/null 2>&1 || die "未检测到 Docker 或 Docker daemon 未运行。请先安装并启动 Docker（https://docs.docker.com/engine/install/）"
-  detect_compose || die "未检测到 Docker Compose。请安装 docker compose 插件（https://docs.docker.com/compose/install/）"
+  ensure_docker
+  ensure_compose
 }
 
 # 定位部署目录与文件（本地源码优先，否则下载）

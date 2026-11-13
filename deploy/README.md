@@ -1,6 +1,6 @@
 # sing-box 企业级代理面板 —— Docker 一键部署
 
-对标 s-ui 的部署体验：在任意装有 Docker 的 Linux 服务器上，一条命令部署 **面板 + 单机节点 + Agent**，得到一个可访问的面板 URL。**不预置任何节点协议**，入站/出站协议由你在面板中手动配置。
+对标 s-ui 的部署体验：在任意 Linux 服务器上，一条命令部署 **面板 + 单机节点 + Agent**，得到一个可访问的面板 URL。**不预置任何节点协议**，入站/出站协议由你在面板中手动配置。
 
 ---
 
@@ -15,7 +15,7 @@ curl -sSL https://raw.githubusercontent.com/sle58083/yc-box/main/deploy/install.
 
 脚本会自动完成：
 
-1. 检查 Docker / Docker Compose；
+1. 检查 Docker / Docker Compose（未安装时自动安装 Docker Engine 与 Compose v2 插件）；
 2. 下载 `docker-compose.yml` 与 `.env` 模板；
 3. 生成随机 `CRYPTO_KEY` / `JWT_SECRET` / `DB_PASSWORD` / `ADMIN_PASSWORD`；
 4. 启动 `postgres` / `redis` / `control-plane` / `web`；
@@ -34,8 +34,9 @@ curl -sSL https://raw.githubusercontent.com/sle58083/yc-box/main/deploy/install.
 
 ## 2. 环境要求
 
-- Linux 服务器（amd64 / arm64），root 或具备 Docker 权限的用户；
-- Docker Engine ≥ 20.10，且已安装 `docker compose` 插件（Compose v2）；
+- Linux 服务器（amd64 / arm64），建议使用 root 执行安装；
+- **无需预装 Docker**：脚本会**自动检测并安装 Docker Engine 与 `docker compose` 插件（Compose v2）**（需可访问 `https://get.docker.com` 与 `https://github.com`）。若已安装则直接复用、不会重复安装；
+- 自动安装失败时，请按脚本提示手动安装 Docker（Docker Engine ≥ 20.10，且已安装 `docker compose` 插件）；
 - 对外开放端口：`80`（面板），以及 `NODE_PORT_RANGE`（默认 `10000-10100`，用于 sing-box 入站）。
 
 ## 3. 部署后如何使用
