@@ -16,7 +16,7 @@ on:
 
 permissions:
   contents: write      # 上传 Release 资产（install.sh）
-  packages: write      # 推送 GHCR 镜像
+  packages: write      # 推送 GHCR 镜像 + 设置包可见性
 
 env:
   REGISTRY: ghcr.io
@@ -76,6 +76,16 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Make package public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # GHCR 镜像默认私有；设为 public 使任意服务器无需登录即可 pull（一键部署必需）。
+          # 首次推送后包才存在，故用 || true 容错（包不存在时跳过，下次 tag 再设）。
+          gh api -X PATCH \
+            "user/packages/container/singbox-panel-${{ matrix.service }}/visibility" \
+            -f visibility=public || true
 
   release:
     name: Publish GitHub Release
