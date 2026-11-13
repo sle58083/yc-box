@@ -29,10 +29,11 @@ func (m *unixManager) Start(ctx context.Context, spec ProcessSpec) (Process, err
 	cmd := exec.CommandContext(ctx, spec.Binary, spec.Args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = append(os.Environ(), spec.Env...)
-	// 关键：独立会话/进程组 + 父进程死亡信号（孤儿回收，docs/agent-cross-platform.md §1.2）。
+	// 关键：独立进程组 + 父进程死亡信号（孤儿回收，docs/agent-cross-platform.md §1.2）。
+	// 注意：不用 Setsid——容器内（尤其 agent 为 PID 1 时）setsid 可能返回 EPERM，
+	// 且容器 namespace 已提供会话隔离，Setpgid 已足够按组管理进程。
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid:   true,            // 新进程组，便于按组发信号（负 PID）
-		Setsid:    true,            // 新会话，脱离 Agent 会话
 		Pdeathsig: syscall.SIGTERM, // 父进程(Agent)死亡 → 内核自动 SIGTERM 子进程
 	}
 	if err := cmd.Start(); err != nil {
