@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box shadowsocks outbound element",
+  "type": "object",
+  "required": ["type", "tag", "server", "server_port", "method", "password"],
+  "properties": {
+    "type": { "const": "shadowsocks" },
+    "tag": { "type": "string" },
+    "server": { "type": "string" },
+    "server_port": { "type": "integer" },
+    "method": { "type": "string" },
+    "password": { "type": "string" }
+  },
+  "additionalProperties": true
+}

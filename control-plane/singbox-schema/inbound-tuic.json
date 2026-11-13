@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box tuic inbound element",
+  "type": "object",
+  "required": ["type", "tag", "listen", "listen_port"],
+  "properties": {
+    "type": { "const": "tuic" },
+    "tag": { "type": "string" },
+    "listen": { "type": "string" },
+    "listen_port": { "type": "integer" },
+    "users": { "type": "array" },
+    "tls": { "type": "object" },
+    "congestion_control": { "type": "string" }
+  },
+  "additionalProperties": true
+}

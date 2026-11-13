@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box trojan outbound element",
+  "type": "object",
+  "required": ["type", "tag", "server", "server_port", "password", "tls"],
+  "properties": {
+    "type": { "const": "trojan" },
+    "tag": { "type": "string" },
+    "server": { "type": "string" },
+    "server_port": { "type": "integer" },
+    "password": { "type": "string" },
+    "tls": { "type": "object" },
+    "transport": { "type": "object" }
+  },
+  "additionalProperties": true
+}

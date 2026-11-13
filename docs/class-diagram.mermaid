@@ -1,0 +1,118 @@
+classDiagram
+    class Group {
+        +string ID
+        +string Name
+        +string Desc
+        +string ParentID
+        +time.Time CreatedAt
+    }
+    class Node {
+        +string ID
+        +string GroupID
+        +string Name
+        +string Address
+        +string AgentTokenHash
+        +string AgentVersion
+        +string Status
+        +time.Time LastHeartbeat
+        +string SingboxVersion
+    }
+    class InboundConfig {
+        +string ID
+        +string GroupID
+        +string NodeID
+        +string Name
+        +string Type
+        +string Listen
+        +int Port
+        +string Settings
+        +string TLS
+        +string Transport
+        +bool IsUserInbound
+        +string Status
+    }
+    class OutboundConfig {
+        +string ID
+        +string GroupID
+        +string NodeID
+        +string Name
+        +string Type
+        +string Settings
+        +string TLS
+        +string Transport
+        +string Status
+    }
+    class RoutingRule {
+        +string ID
+        +string GroupID
+        +string NodeID
+        +string Name
+        +string InboundTags
+        +string OutboundTag
+        +string RuleType
+        +string Value
+        +int Priority
+    }
+    class ProxyUser {
+        +string ID
+        +string GroupID
+        +string UUID
+        +string PasswordHash
+        +string Remark
+        +int64 QuotaBytes
+        +int64 UsedBytes
+        +time.Time ExpireAt
+        +string Status
+        +string SubTokenHash
+    }
+    class PanelUser {
+        +string ID
+        +string Username
+        +string PasswordHash
+        +string RoleID
+        +string Status
+    }
+    class Role {
+        +string ID
+        +string Name
+        +string Permissions
+    }
+    class ConfigVersion {
+        +string ID
+        +string NodeID
+        +int Version
+        +string ContentEnc
+        +string Hash
+        +string Status
+        +string CreatedBy
+        +time.Time CreatedAt
+    }
+    class TrafficRecord {
+        +time.Time Ts
+        +string NodeID
+        +string ProxyUserID
+        +string InboundTag
+        +string OutboundTag
+        +int64 UpBytes
+        +int64 DownBytes
+    }
+    class AuditLog {
+        +string ID
+        +string OperatorID
+        +string Action
+        +string Resource
+        +string Detail
+        +string IP
+        +time.Time CreatedAt
+    }
+
+    Group "1" --> "*" Node : 拥有
+    Group "1" --> "*" InboundConfig : 拥有
+    Group "1" --> "*" OutboundConfig : 拥有
+    Group "1" --> "*" RoutingRule : 拥有
+    Group "1" --> "*" ProxyUser : 拥有
+    Node "1" --> "*" ConfigVersion : 产生
+    Node "1" --> "*" TrafficRecord : 上报
+    ProxyUser "1" --> "*" TrafficRecord : 归属
+    Role "1" --> "*" PanelUser : 分配
+    PanelUser "1" --> "*" AuditLog : 触发

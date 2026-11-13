@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box hysteria2 inbound element",
+  "type": "object",
+  "required": ["type", "tag", "listen", "listen_port"],
+  "properties": {
+    "type": { "const": "hysteria2" },
+    "tag": { "type": "string" },
+    "listen": { "type": "string" },
+    "listen_port": { "type": "integer" },
+    "users": { "type": "array" },
+    "tls": { "type": "object" },
+    "masquerade": { "type": "string" }
+  },
+  "additionalProperties": true
+}

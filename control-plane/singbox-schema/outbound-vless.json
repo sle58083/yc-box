@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box vless outbound element",
+  "type": "object",
+  "required": ["type", "tag", "server", "server_port", "uuid"],
+  "properties": {
+    "type": { "const": "vless" },
+    "tag": { "type": "string" },
+    "server": { "type": "string" },
+    "server_port": { "type": "integer" },
+    "uuid": { "type": "string" },
+    "flow": { "type": "string" },
+    "tls": { "type": "object" },
+    "transport": { "type": "object" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box tuic outbound element",
+  "type": "object",
+  "required": ["type", "tag", "server", "server_port", "uuid", "password", "tls"],
+  "properties": {
+    "type": { "const": "tuic" },
+    "tag": { "type": "string" },
+    "server": { "type": "string" },
+    "server_port": { "type": "integer" },
+    "uuid": { "type": "string" },
+    "password": { "type": "string" },
+    "tls": { "type": "object" },
+    "congestion_control": { "type": "string" }
+  },
+  "additionalProperties": true
+}

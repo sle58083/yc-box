@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box vless inbound element",
+  "type": "object",
+  "required": ["type", "tag", "listen", "listen_port"],
+  "properties": {
+    "type": { "const": "vless" },
+    "tag": { "type": "string" },
+    "listen": { "type": "string" },
+    "listen_port": { "type": "integer" },
+    "users": { "type": "array" },
+    "tls": { "type": "object" },
+    "transport": { "type": "object" }
+  },
+  "additionalProperties": true
+}

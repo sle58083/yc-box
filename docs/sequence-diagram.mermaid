@@ -1,0 +1,65 @@
+sequenceDiagram
+    autonumber
+    participant UI as 前端
+    participant API as 控制面 API
+    participant SV as ConfigService
+    participant DB as PostgreSQL
+    participant HUB as AgentHub(WS)
+    participant AG as Edge Agent
+    participant SB as sing-box
+
+    Note over UI,SB: 场景A：配置保存与下发
+
+    UI->>API: PUT /api/v1/inbounds/:id (保存配置)
+    API->>SV: UpdateInbound(...)
+    SV->>SV: ① 业务校验(tag唯一/端口/引用)
+    SV->>DB: 保存中立模型
+    SV-->>API: 返回
+    API-->>UI: 200
+
+    UI->>API: POST /api/v1/config/deploy {node_id}
+    API->>SV: Deploy(nodeID)
+    SV->>DB: 聚合 group+node 配置 + 解密 proxy users
+    SV->>SV: ② Generate() 渲染 sing-box JSON
+    SV->>SV: ③ gojsonschema 校验
+    SV->>DB: 写 ConfigVersion(draft, 加密快照, hash, version+1)
+    SV->>HUB: config_push(version, content)
+    HUB->>AG: config_push
+    AG->>AG: ④ sing-box check -c 预校验
+    AG->>AG: ⑤ 备份旧配置 config.json.bak
+    AG->>AG: 写入新配置
+    AG->>SB: ⑥ reload(信号/API)
+    AG->>AG: ⑦ 校验进程存活 + 健康探测
+    alt 应用成功
+        AG->>HUB: config_apply_result(success)
+        HUB->>SV: ConfigVersion.status=success
+        SV-->>UI: 下发成功
+    else 应用失败
+        AG->>AG: 回滚 config.json.bak -> reload
+        AG->>HUB: config_apply_result(failed, error)
+        HUB->>SV: ConfigVersion.status=rolled_back
+        SV-->>UI: 下发失败(可重试/回滚)
+    end
+
+    Note over UI,SB: 场景B：节点接入注册
+
+    AG->>API: register(token, hostinfo, singbox_version)
+    API->>API: 校验令牌 hash
+    API->>DB: 更新节点状态 online + last_heartbeat
+    API-->>AG: register_ack(配置推送或 pending)
+    loop 每 5s
+        AG->>API: heartbeat(流量摘要)
+        API->>DB: 更新 last_heartbeat
+    end
+
+    Note over UI,SB: 场景C：订阅拉取与流量统计
+
+    UI->>API: GET /sub/:token (公开)
+    API->>SV: 校验订阅令牌 -> 定位 ProxyUser
+    SV->>DB: 读分组 inbounds/outbounds + 解密用户 UUID
+    SV->>SV: Generate() 生成用户订阅配置
+    SV-->>UI: 返回订阅配置
+
+    AG->>HUB: traffic_report(node_id, per inbound/outbound/up/down)
+    HUB->>DB: 写 traffic_record
+    DB->>DB: 按 UUID 聚合用户流量 + 更新 used_bytes

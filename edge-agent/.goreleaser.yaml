@@ -1,0 +1,31 @@
+# GoReleaser 配置：edge-agent 交叉编译产物矩阵
+# 至少产出 linux/amd64、linux/arm64、linux/armv7、windows/amd64、windows/arm64 五类二进制。
+# 详见 docs/agent-cross-platform.md §4.2。
+version: 2
+
+project_name: edge-agent
+
+builds:
+  - id: edge-agent
+    main: ./cmd/agent
+    binary: singbox-agent
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, windows]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    ignore:
+      - goos: windows
+        goarch: [arm]
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  draft: true

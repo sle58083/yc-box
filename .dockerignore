@@ -1,0 +1,22 @@
+# 构建上下文为仓库根目录时排除无关/敏感文件，避免把 node_modules 等打进构建上下文
+.git
+.gitignore
+.github
+
+# 前端依赖与构建产物（Dockerfile 内会重新 npm ci + build）
+web/node_modules
+web/dist
+
+# 运行时敏感文件（绝不进入镜像）
+.env
+deploy/.env
+
+# 日志与临时文件
+*.log
+*.tmp
+
+# 本地调试产物
+control-plane/control-plane
+control-plane/*.exe
+edge-agent/edge-agent
+edge-agent/*.exe

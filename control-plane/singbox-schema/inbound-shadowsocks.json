@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box shadowsocks inbound element",
+  "type": "object",
+  "required": ["type", "tag", "listen", "listen_port", "method", "password"],
+  "properties": {
+    "type": { "const": "shadowsocks" },
+    "tag": { "type": "string" },
+    "listen": { "type": "string" },
+    "listen_port": { "type": "integer" },
+    "method": { "type": "string" },
+    "password": { "type": "string" },
+    "transport": { "type": "object" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box direct outbound element",
+  "type": "object",
+  "required": ["type", "tag"],
+  "properties": {
+    "type": { "const": "direct" },
+    "tag": { "type": "string" }
+  },
+  "additionalProperties": true
+}

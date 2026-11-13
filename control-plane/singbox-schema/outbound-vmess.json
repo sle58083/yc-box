@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box vmess outbound element",
+  "type": "object",
+  "required": ["type", "tag", "server", "server_port", "uuid"],
+  "properties": {
+    "type": { "const": "vmess" },
+    "tag": { "type": "string" },
+    "server": { "type": "string" },
+    "server_port": { "type": "integer" },
+    "uuid": { "type": "string" },
+    "security": { "type": "string" },
+    "alter_id": { "type": "integer" },
+    "transport": { "type": "object" }
+  },
+  "additionalProperties": true
+}
