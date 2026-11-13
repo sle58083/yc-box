@@ -95,8 +95,10 @@ env_set() {
 }
 
 # 从 JSON 中取字段（jq 优先，python3 次之，sed 兜底仅支持 data.<field>）
+# 注意：空/非法 JSON 直接返回空串，绝不抛异常中断脚本（修复 JSONDecodeError 卡死）。
 json_field() {
   local json="$1" path="$2" leaf val
+  [ -n "$json" ] || { printf ''; return 0; }
   if command -v jq >/dev/null 2>&1; then
     printf '%s' "$json" | jq -r "$path" 2>/dev/null || true
     return 0
@@ -104,12 +106,20 @@ json_field() {
   if command -v python3 >/dev/null 2>&1; then
     printf '%s' "$json" | python3 - "$path" <<'PY'
 import sys, json
-data = json.load(sys.stdin)
+raw = sys.stdin.read().strip()
+if not raw:
+    sys.exit(0)
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(0)
 cur = data
 for part in sys.argv[1].split('.'):
     if part.startswith('[') and part.endswith(']'):
         cur = cur[int(part[1:-1])]
     else:
+        if not isinstance(cur, dict) or part not in cur:
+            sys.exit(0)
         cur = cur[part]
 if isinstance(cur, str):
     print(cur)
@@ -383,11 +393,21 @@ provision_node() {
 
   info "登录面板并纳管单机节点 ..."
 
-  login_json="$(curl -fsS --max-time 10 -X POST "$api/auth/login" \
-    -H 'Content-Type: application/json' \
-    -d "{\"username\":\"$admin_user\",\"password\":\"$admin_pass\"}")" || return 1
-  token="$(json_field "$login_json" '.data.access_token')"
-  { [ -n "$token" ] && [ "$token" != "null" ]; } || { warn "登录失败：$(json_field "$login_json" '.message')"; return 1; }
+  # 登录重试：control-plane 刚 healthy 时 admin seed / API 可能尚未完全就绪，
+  # 轮询重试（最多 30 次 × 2s），避免首启时序导致登录失败。
+  local i
+  token=""
+  for i in $(seq 1 30); do
+    login_json="$(curl -fsS --max-time 10 -X POST "$api/auth/login" \
+      -H 'Content-Type: application/json' \
+      -d "{\"username\":\"$admin_user\",\"password\":\"$admin_pass\"}" 2>/dev/null)" || login_json=""
+    token="$(json_field "$login_json" '.data.access_token')"
+    if [ -n "$token" ] && [ "$token" != "null" ]; then
+      break
+    fi
+    sleep 2
+  done
+  { [ -n "$token" ] && [ "$token" != "null" ]; } || { warn "登录失败（已重试）：$(json_field "$login_json" '.message')"; return 1; }
 
   groups_json="$(curl -fsS --max-time 10 "$api/groups" -H "Authorization: Bearer $token")" || return 1
   group_id="$(json_field "$groups_json" '.data[0].id')"

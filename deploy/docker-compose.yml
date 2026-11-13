@@ -20,6 +20,8 @@ services:
       context: ..
       dockerfile: deploy/docker/control-plane.Dockerfile
     restart: unless-stopped
+    # 一核一G 轻量化：限制内存，避免 OOM 拖垮整机（可经 .env 覆盖）
+    mem_limit: ${CONTROL_MEM_LIMIT:-128m}
     environment:
       SBP_SERVER_HOST: "0.0.0.0"
       SBP_SERVER_PORT: "8080"
@@ -63,6 +65,8 @@ services:
       context: ..
       dockerfile: deploy/docker/edge-agent.Dockerfile
     restart: unless-stopped
+    # 一核一G 轻量化：限制内存（含 sing-box 子进程），可经 .env 覆盖
+    mem_limit: ${AGENT_MEM_LIMIT:-192m}
     environment:
       SBAGENT_AGENT_DATADIR: "/opt/singbox-agent"
       # 单机模式：经 compose 内网直连控制面 WebSocket
