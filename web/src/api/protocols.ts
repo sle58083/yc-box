@@ -15,6 +15,7 @@ export interface ProtocolFieldMeta {
   type: ProtocolFieldType
   required: boolean
   encrypt: boolean
+  help?: string
   options?: ProtocolFieldOption[]
   default?: unknown
 }

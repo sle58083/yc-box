@@ -36,6 +36,9 @@ export default function ProtocolForm({ protocol, direction, value, onChange }: P
               ) : null}
             </div>
             <FieldInput field={f} value={effective} onChange={(v) => set(f.key, v)} />
+            {f.help ? (
+              <div style={{ marginTop: 4, fontSize: 12, color: '#999' }}>{f.help}</div>
+            ) : null}
           </div>
         )
       })}

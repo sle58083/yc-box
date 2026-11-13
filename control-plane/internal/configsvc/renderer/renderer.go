@@ -90,7 +90,8 @@ type FieldSchema struct {
 	Label    string          `json:"label"`
 	Type     string          `json:"type"` // text/number/bool/select/array/duration
 	Required bool            `json:"required"`
-	Encrypt  bool            `json:"encrypt"` // 是否 🔐 加密落库（如 anytls password）
+	Encrypt  bool            `json:"encrypt"`          // 是否 🔐 加密落库（如 anytls password）
+	Help     string          `json:"help,omitempty"`   // 帮助提示（如 2022-blake3 需 base64 密钥）
 	Options  []FieldOption   `json:"options,omitempty"`
 	Default  json.RawMessage `json:"default,omitempty"`
 }
