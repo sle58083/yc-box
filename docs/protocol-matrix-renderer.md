@@ -49,6 +49,8 @@
 
 > **组合约束落点**：以上规则全部下沉到各渲染器的 `ValidateInbound/ValidateOutbound`（保存前强校验），Generator 与前端只消费渲染器给出的「允许清单」，不重复硬编码规则（详见 §4.3）。
 
+> **⚠️ Reality 环境依赖（重要）**：Reality 依赖「服务端向握手目标（handshake server）发起真实 TLS 握手并伪装」这一特定网络行为。真机实测发现，**部分 VPS（尤其对 TLS 流量特征敏感的海外节点，如某些华为云国际节点）会被运营商 DPI/中间设备干扰**，导致 `REALITY: processed invalid connection` / 客户端 `reality verification failed`，即使配置完全正确（密钥对匹配、short_id 一致、时间同步、同机 127.0.0.1 测试）也无法建立连接。这是**环境限制，非面板/代码问题**。建议：① 生产环境优先用**普通 TLS**（证书方式，稳定可靠）；② 使用 Reality 前先在目标 VPS 上验证握手目标可达且不被干扰；③ 前端已保留 Reality 配置项，但需提示用户「部分环境不可用」。
+
 ---
 
 ## 2. 渲染器扩展点设计

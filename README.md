@@ -198,9 +198,9 @@ Agent 通过 `kernel.manager` 管理 sing-box 二进制，目录布局：
 
 ## 9. 已知边界（MVP）
 
-- **全链路 e2e 未实机验证**：本机无真实 sing-box 环境，代码已通过 `go build/vet/test` 与交叉编译验证，但「注册→下发→热重载→孤儿回收」端到端链路需在集成环境实测一次。
-- **协议元数据**：前端本地枚举（`web/src/utils/protocols.ts`），后端 `GET /protocols` 下发为 P1。
-- **Reality/Clash 订阅**：Reality 的 private_key→public_key 推导、完整 Clash YAML 为 P1，MVP 订阅生成普通 TLS + SNI。
+- **协议元数据**：后端 `GET /api/v1/protocols` 已实现，前端动态表单优先拉后端元数据、失败回退本地枚举。
+- **Reality 环境依赖**：Reality 已实现渲染，但依赖「服务端向握手目标发起真实 TLS 握手」这一网络行为，**部分 VPS（尤其流量敏感型海外节点）会被 DPI 干扰导致握手失败**（`REALITY: processed invalid connection`），这是环境限制非代码问题。生产环境建议优先用**普通 TLS**（详见 `docs/protocol-matrix-renderer.md`）。
+- **Clash 订阅**：完整 Clash YAML 为 P1，当前订阅为 base64(URI 列表)。
 - **stats 采集**：sing-box stats API 采集点为预留 stub，流量当前走心跳摘要通道。
 - **自定义角色**：MVP 仅支持内置三角色。
 - **前端体积**：主 chunk 约 1.2MB，建议后续 code-split。
