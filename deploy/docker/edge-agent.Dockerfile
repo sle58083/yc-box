@@ -24,10 +24,12 @@ FROM golang:1.26-alpine AS build-singbox
 
 ARG TARGETARCH
 ARG SINGBOX_VERSION=1.14.4
-# 官方默认 tags（release/DEFAULT_BUILD_TAGS）去掉 with_naive_outbound（需 cronet/Chromium CGO）
-# 和 with_tailscale（需 derp 特殊依赖），再加上 with_v2ray_api（流量统计 gRPC 接口）。
+# 官方默认 tags（release/DEFAULT_BUILD_TAGS）裁剪：
+#   去掉 with_naive_outbound（需 cronet/Chromium CGO）、with_tailscale（需 derp 特殊依赖）、
+#   with_ccm/with_ocm（Claude/OpenAI 多路复用，代理面板用不到，且引入 openai-go 大依赖拖慢编译）；
+#   加上 with_v2ray_api（流量统计 gRPC 接口）。
 # 这些 tag 在 CGO_ENABLED=0 纯静态交叉编译下均可构建。
-ARG SINGBOX_TAGS="with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_v2ray_api,with_ccm,with_ocm,with_cloudflared,with_usbip,with_openvpn,with_openconnect,badlinkname,tfogo_checklinkname0"
+ARG SINGBOX_TAGS="with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_v2ray_api,with_cloudflared,with_usbip,with_openvpn,with_openconnect,badlinkname,tfogo_checklinkname0"
 ARG SINGBOX_LDFLAGS="-X runtime.godebugDefault=multipathtcp=0,tlssha1=1 -checklinkname=0"
 
 RUN apk add --no-cache git ca-certificates
