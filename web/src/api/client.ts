@@ -5,6 +5,7 @@ import type {
   AxiosRequestConfig,
   InternalAxiosRequestConfig,
 } from 'axios'
+import { getPanelPath } from '../lib/panelPath'
 
 // 统一响应信封（system_design.md §9.1）：{code, message, data}
 export interface ApiResponse<T = unknown> {
@@ -50,8 +51,11 @@ client.interceptors.response.use(
   (error: AxiosError) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('sbp_token')
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login'
+      // 面板路径随机化：跳转必须带 PANEL_PATH 前缀（如 /a1b2c3/login），
+      // 否则硬编码 /login 会命中 nginx 根路径 404。
+      const loginPath = `${getPanelPath()}/login`
+      if (window.location.pathname !== loginPath) {
+        window.location.href = loginPath
       }
     }
     return Promise.reject(error)
