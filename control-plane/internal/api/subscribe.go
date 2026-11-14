@@ -26,5 +26,5 @@ func (h *Handler) SubscribeContentClash(c *gin.Context) {
 		c.JSON(http.StatusOK, model.Err(model.CodeNotFound, err.Error()))
 		return
 	}
-	c.Data(http.StatusOK, "text/plain; charset=utf-8", content)
+	c.Data(http.StatusOK, "text/yaml; charset=utf-8", content)
 }
