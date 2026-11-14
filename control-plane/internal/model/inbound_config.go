@@ -22,8 +22,9 @@ type InboundConfig struct {
 	Type          string          `gorm:"type:varchar(32);not null" json:"type"`
 	Listen        string          `gorm:"type:varchar(64)" json:"listen"`
 	Port          int             `gorm:"not null;default:0" json:"port"`
-	Settings      json.RawMessage `gorm:"type:jsonb" json:"settings"` // 协议参数（clients/users 等）
-	TLS           json.RawMessage `gorm:"type:jsonb" json:"tls"`      // 🔐 TLS/Reality 配置，private_key 等私钥加密
+	Settings      json.RawMessage `gorm:"type:jsonb" json:"settings"`     // 协议参数（clients/users 等）
+	TLS           json.RawMessage `gorm:"type:jsonb" json:"tls"`          // 🔐 TLS/Reality 配置，private_key 等私钥加密
+	CertID        *uuid.UUID      `gorm:"type:uuid;index" json:"cert_id"` // 绑定的证书（certificate.id），可空
 	Transport     json.RawMessage `gorm:"type:jsonb" json:"transport"`
 	IsUserInbound bool            `gorm:"not null;default:false" json:"is_user_inbound"` // 是否代理用户入口，生成时注入用户 UUID
 	Status        string          `gorm:"type:varchar(16);not null;default:'enabled'" json:"status"`

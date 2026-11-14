@@ -27,7 +27,7 @@ func newTestDB(t *testing.T) *DB {
 	return db
 }
 
-// TestAutoMigrateSQLite 验证 11 张表在 SQLite 下可创建，且 AutoMigrate 幂等。
+// TestAutoMigrateSQLite 验证 12 张表在 SQLite 下可创建，且 AutoMigrate 幂等。
 func TestAutoMigrateSQLite(t *testing.T) {
 	db, err := New(filepath.Join(t.TempDir(), "panel.db"), "silent")
 	if err != nil {
@@ -51,8 +51,8 @@ func TestAutoMigrateSQLite(t *testing.T) {
 	if err := db.Raw("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").Scan(&count).Error; err != nil {
 		t.Fatalf("count tables: %v", err)
 	}
-	if count != 11 {
-		t.Fatalf("期望 11 张业务表，实际 %d", count)
+	if count != 12 {
+		t.Fatalf("期望 12 张业务表，实际 %d", count)
 	}
 
 	// 验证 SQLite 关键 pragma 生效（WAL / 外键）。
@@ -74,7 +74,7 @@ func TestAutoMigrateSQLite(t *testing.T) {
 }
 
 // TestSQLiteCRUDRoundTrip 验证 uuid / json.RawMessage / time.Time 往返一致，
-// 并覆盖 11 张表的基本 CRUD（先父表后子表）。
+// 并覆盖 12 张表的基本 CRUD（先父表后子表）。
 func TestSQLiteCRUDRoundTrip(t *testing.T) {
 	db := newTestDB(t)
 
@@ -313,6 +313,37 @@ func TestSQLiteCRUDRoundTrip(t *testing.T) {
 	}
 	if auditOut.OperatorID != user.ID || !jsonBytesEqual(auditOut.Detail, audit.Detail) {
 		t.Fatalf("audit_log 字段往返不一致")
+	}
+
+	// 12. certificate：*time.Time 时间字段 + PEM 字段（T01 仅建模型，加密在 T03 service 层）
+	nb := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	na := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	cert := model.Certificate{
+		Name:      "panel.example.com",
+		Type:      "self_signed",
+		Domains:   `["panel.example.com","*.panel.example.com"]`,
+		CertPEM:   "enc:v1:cert",
+		KeyPEM:    "enc:v1:key",
+		Issuer:    "CN=panel.example.com",
+		NotBefore: &nb,
+		NotAfter:  &na,
+		Status:    "valid",
+	}
+	if err := db.Create(&cert).Error; err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	var certOut model.Certificate
+	if err := db.First(&certOut, "id = ?", cert.ID).Error; err != nil {
+		t.Fatalf("read certificate: %v", err)
+	}
+	if certOut.NotBefore == nil || !certOut.NotBefore.Equal(nb) {
+		t.Fatalf("certificate not_before 往返不一致")
+	}
+	if certOut.NotAfter == nil || !certOut.NotAfter.Equal(na) {
+		t.Fatalf("certificate not_after 往返不一致")
+	}
+	if certOut.CertPEM != cert.CertPEM || certOut.KeyPEM != cert.KeyPEM {
+		t.Fatalf("certificate PEM 字段往返不一致")
 	}
 }
 

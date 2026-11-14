@@ -115,8 +115,8 @@ func (r *AnyTLSRenderer) ValidateInbound(cfg model.InboundConfig) error {
 	if realityEnabled(m) || echEnabled(m) {
 		return fmt.Errorf("anytls inbound: 不支持 Reality/ECH")
 	}
-	if str(m, "certificate_path") == "" || str(m, "key_path") == "" {
-		return fmt.Errorf("anytls inbound: 缺少 certificate_path/key_path")
+	if cfg.CertID == nil && (str(m, "certificate_path") == "" || str(m, "key_path") == "") {
+		return fmt.Errorf("anytls inbound: 缺少 certificate_path/key_path（或绑定 cert_id）")
 	}
 
 	settings, err := parseMap(cfg.Settings)

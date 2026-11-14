@@ -30,6 +30,9 @@ const (
 	PermOutboundRead  = "outbound:read"
 	PermOutboundWrite = "outbound:write"
 
+	PermCertRead  = "cert:read"
+	PermCertWrite = "cert:write"
+
 	PermRoutingRead  = "routing:read"
 	PermRoutingWrite = "routing:write"
 
@@ -57,6 +60,7 @@ var AllPermissions = []string{
 	PermNodeRead, PermNodeWrite, PermNodeDelete, PermNodeRegenerateToken,
 	PermInboundRead, PermInboundWrite,
 	PermOutboundRead, PermOutboundWrite,
+	PermCertRead, PermCertWrite,
 	PermRoutingRead, PermRoutingWrite,
 	PermConfigPreview, PermConfigDeploy, PermConfigRollback,
 	PermProxyUserRead, PermProxyUserWrite, PermProxyUserResetSub,
@@ -73,6 +77,7 @@ var rolePermissions = map[string]map[string]bool{
 		PermNodeRead, PermNodeWrite, PermNodeDelete,
 		PermInboundRead, PermInboundWrite,
 		PermOutboundRead, PermOutboundWrite,
+		PermCertRead, PermCertWrite,
 		PermRoutingRead, PermRoutingWrite,
 		PermConfigPreview, PermConfigDeploy, PermConfigRollback,
 		PermProxyUserRead, PermProxyUserWrite, PermProxyUserResetSub,
@@ -83,6 +88,7 @@ var rolePermissions = map[string]map[string]bool{
 		PermNodeRead,
 		PermInboundRead,
 		PermOutboundRead,
+		PermCertRead,
 		PermRoutingRead,
 		PermProxyUserRead,
 		PermTrafficRead, PermAuditRead, PermMonitorRead,

@@ -91,6 +91,29 @@ func (o *Orchestrator) pushVersion(ctx context.Context, nodeID uuid.UUID, v *mod
 		return err
 	}
 
+	// 证书文件先于 config_push 下发：config.json 引用的相对路径必须已存在，
+	// 否则 sing-box check 会因找不到 certificate_path/key_path 失败。
+	files, err := o.cfgSvc.NodeCertFiles(ctx, nodeID)
+	if err != nil {
+		_ = o.cfgSvc.UpdateVersionStatus(ctx, v.ID, model.ConfigVersionFailed)
+		return err
+	}
+	if len(files) > 0 {
+		payloads := make([]agent.FilePayload, 0, len(files))
+		for _, f := range files {
+			payloads = append(payloads, agent.FilePayload{Path: f.Path, Content: f.Content, Mode: f.Mode})
+		}
+		fenv, err := agent.NewEnvelope(agent.MsgFilePush, uuid.New().String(), agent.FilePushData{Files: payloads})
+		if err != nil {
+			_ = o.cfgSvc.UpdateVersionStatus(ctx, v.ID, model.ConfigVersionFailed)
+			return err
+		}
+		if err := o.hub.SendToNode(nodeID, fenv); err != nil {
+			_ = o.cfgSvc.UpdateVersionStatus(ctx, v.ID, model.ConfigVersionFailed)
+			return fmt.Errorf("deploy: 证书下发失败: %w", err)
+		}
+	}
+
 	ch := o.register(nodeID, v.Version)
 	defer o.unregister(nodeID, v.Version)
 

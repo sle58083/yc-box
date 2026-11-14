@@ -63,6 +63,11 @@ func NewRouter(h *api.Handler, authSvc *auth.Service, auditSvc *audit.Service) *
 		authed.PUT("/outbounds/:id", middleware.RequirePermission(rbac.PermOutboundWrite), h.UpdateOutbound)
 		authed.DELETE("/outbounds/:id", middleware.RequirePermission(rbac.PermOutboundWrite), h.DeleteOutbound)
 
+		// 证书
+		authed.GET("/certificates", middleware.RequirePermission(rbac.PermCertRead), h.ListCertificates)
+		authed.POST("/certificates", middleware.RequirePermission(rbac.PermCertWrite), h.CreateCertificate)
+		authed.DELETE("/certificates/:id", middleware.RequirePermission(rbac.PermCertWrite), h.DeleteCertificate)
+
 		// 路由
 		authed.GET("/routing", middleware.RequirePermission(rbac.PermRoutingRead), h.ListRoutingRules)
 		authed.POST("/routing", middleware.RequirePermission(rbac.PermRoutingWrite), h.CreateRoutingRule)

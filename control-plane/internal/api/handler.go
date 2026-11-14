@@ -10,6 +10,7 @@ import (
 	"github.com/singbox-panel/control-plane/internal/agent"
 	"github.com/singbox-panel/control-plane/internal/audit"
 	"github.com/singbox-panel/control-plane/internal/auth"
+	"github.com/singbox-panel/control-plane/internal/cert"
 	"github.com/singbox-panel/control-plane/internal/configsvc"
 	"github.com/singbox-panel/control-plane/internal/deploy"
 	"github.com/singbox-panel/control-plane/internal/group"
@@ -33,6 +34,7 @@ type Handler struct {
 	Traffic   *traffic.Service
 	Audit     *audit.Service
 	Group     *group.Service
+	Cert      *cert.Service
 }
 
 // NewHandler 构造 handler。
@@ -47,6 +49,7 @@ func NewHandler(
 	trafficSvc *traffic.Service,
 	auditSvc *audit.Service,
 	groupSvc *group.Service,
+	certSvc *cert.Service,
 ) *Handler {
 	return &Handler{
 		Config:    cfg,
@@ -59,6 +62,7 @@ func NewHandler(
 		Traffic:   trafficSvc,
 		Audit:     auditSvc,
 		Group:     groupSvc,
+		Cert:      certSvc,
 	}
 }
 
@@ -73,7 +77,7 @@ func (h *Handler) fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		code = model.CodeNotFound
-	case configsvc.IsValidationError(err):
+	case configsvc.IsValidationError(err), cert.IsValidationError(err):
 		code = model.CodeValidationFailed
 	}
 	c.JSON(http.StatusOK, model.Err(code, err.Error()))

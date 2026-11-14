@@ -64,11 +64,51 @@ func validateInbound(ctx context.Context, db *gorm.DB, cfg *model.InboundConfig,
 	if err := r.ValidateInbound(*cfg); err != nil {
 		return ValidationErrorf("%v", err)
 	}
+	if err := validateInboundCert(ctx, db, cfg); err != nil {
+		return err
+	}
 
 	if err := checkInboundTagUnique(ctx, db, cfg, existing); err != nil {
 		return err
 	}
 	return checkPortConflict(ctx, db, cfg, existing)
+}
+
+// validateInboundCert 校验入站证书绑定：cert_id 存在 + 协议允许 plain TLS。
+//
+// 「仅 plain TLS 类允许绑定证书」：协议 Meta().TLSAllowed 含 TLSModePlain
+// 才可绑定（vmess / shadowsocks 无原生 TLS，禁止绑定）。
+func validateInboundCert(ctx context.Context, db *gorm.DB, cfg *model.InboundConfig) error {
+	if cfg.CertID == nil {
+		return nil
+	}
+	r, ok := renderer.Get(cfg.Type)
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrProtocolNotFound, cfg.Type)
+	}
+	if !hasTLSPlain(r.Meta()) {
+		return ValidationErrorf("协议 %q 不支持绑定证书（仅 plain TLS 类协议允许）", cfg.Type)
+	}
+
+	var cnt int64
+	if err := db.WithContext(ctx).Model(&model.Certificate{}).
+		Where("id = ?", *cfg.CertID).Count(&cnt).Error; err != nil {
+		return err
+	}
+	if cnt == 0 {
+		return ValidationErrorf("cert_id 对应的证书不存在: %s", cfg.CertID)
+	}
+	return nil
+}
+
+// hasTLSPlain 判断协议元数据是否允许普通 TLS。
+func hasTLSPlain(meta renderer.ProtocolMeta) bool {
+	for _, m := range meta.TLSAllowed {
+		if m == renderer.TLSModePlain {
+			return true
+		}
+	}
+	return false
 }
 
 // validateOutbound 出站保存前业务校验 + 委托协议校验。

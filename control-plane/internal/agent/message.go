@@ -15,6 +15,7 @@ const (
 	MsgLog               = "log"                 // Agent→控制面
 
 	MsgConfigPush = "config_push" // 控制面→Agent
+	MsgFilePush   = "file_push"   // 控制面→Agent（证书等文件下发）
 	MsgRestart    = "restart"     // 控制面→Agent
 	MsgPing       = "ping"        // 控制面→Agent
 )
@@ -79,6 +80,18 @@ type ConfigApplyResultData struct {
 type ConfigPushData struct {
 	Version int    `json:"version"`
 	Content []byte `json:"content"` // sing-box JSON 全文
+}
+
+// FilePayload 是 file_push 消息中的单个文件载荷。
+type FilePayload struct {
+	Path    string `json:"path"`    // 相对 dataDir 的路径（如 etc/certs/<id>.crt）
+	Content []byte `json:"content"` // 文件字节内容
+	Mode    uint32 `json:"mode"`    // 文件权限（unix mode，如 0o644）
+}
+
+// FilePushData 是 file_push 消息的 data（控制面→Agent）。
+type FilePushData struct {
+	Files []FilePayload `json:"files"`
 }
 
 // RestartData 是 restart 消息的 data（预留）。

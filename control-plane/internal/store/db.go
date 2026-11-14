@@ -103,6 +103,7 @@ func (db *DB) AutoMigrate() error {
 		&model.Role{},
 		&model.Node{},
 		&model.PanelUser{},
+		&model.Certificate{},
 		&model.InboundConfig{},
 		&model.OutboundConfig{},
 		&model.RoutingRule{},
