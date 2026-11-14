@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -17,11 +18,13 @@ import (
 	"github.com/singbox-panel/edge-agent/internal/apply"
 	"github.com/singbox-panel/edge-agent/internal/client"
 	"github.com/singbox-panel/edge-agent/internal/config"
+	"github.com/singbox-panel/edge-agent/internal/files"
 	"github.com/singbox-panel/edge-agent/internal/host"
 	"github.com/singbox-panel/edge-agent/internal/kernel"
 	"github.com/singbox-panel/edge-agent/internal/proc"
 	"github.com/singbox-panel/edge-agent/internal/secret"
 	"github.com/singbox-panel/edge-agent/internal/singbox"
+	"github.com/singbox-panel/edge-agent/internal/stats"
 )
 
 // version 由构建时 ldflags 注入。
@@ -93,6 +96,9 @@ func main() {
 		OnRestart: func() error {
 			return sup.Restart(context.Background())
 		},
+		OnFilePush: func(fs []client.FilePayload) error {
+			return files.WriteAll(cfg.Agent.DataDir, fs)
+		},
 	}, token, version)
 
 	// 7. 若已有配置则启动 sing-box（否则等待首次 config_push）。
@@ -105,6 +111,12 @@ func main() {
 	// 8. 运行。
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// 流量采集 goroutine（随 ctx 取消退出）。
+	if cfg.Agent.StatsEnabled {
+		collector := stats.NewCollector(cfg.Agent.StatsAPI)
+		go trafficLoop(ctx, cli, collector, cfg.Agent.StatsInterval, logger)
+	}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- cli.Run(ctx) }()
@@ -134,6 +146,33 @@ func main() {
 	defer stopCancel()
 	_ = sup.Stop(stopCtx)
 	logger.Info("agent stopped")
+}
+
+// trafficLoop 周期采集流量并上报，随 ctx 取消退出。
+func trafficLoop(ctx context.Context, cli *client.Client, collector *stats.Collector, interval time.Duration, log *zap.Logger) {
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			records, err := collector.Collect(ctx)
+			if err != nil {
+				log.Warn("采集流量失败", zap.Error(err))
+				continue
+			}
+			if len(records) == 0 {
+				continue
+			}
+			if err := cli.SendTraffic(records); err != nil {
+				log.Warn("上报流量失败", zap.Error(err))
+			}
+		}
+	}
 }
 
 func resolveToken(cfg *config.Config, store *secret.Store) string {

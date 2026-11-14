@@ -14,6 +14,7 @@ import (
 
 	"github.com/singbox-panel/edge-agent/internal/config"
 	"github.com/singbox-panel/edge-agent/internal/host"
+	"github.com/singbox-panel/edge-agent/internal/stats"
 )
 
 // 消息类型（与控制面 agent 包保持一致）。
@@ -22,8 +23,10 @@ const (
 	msgHeartbeat         = "heartbeat"
 	msgConfigApplyResult = "config_apply_result"
 	msgConfigPush        = "config_push"
+	msgFilePush          = "file_push"
 	msgRestart           = "restart"
 	msgPing              = "ping"
+	msgTrafficReport     = "traffic_report"
 )
 
 // Envelope 是统一消息信封（§9.9：id 幂等 + ts）。
@@ -42,10 +45,23 @@ type ApplyResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
+// TrafficReportData 是 traffic_report 消息的 data（Agent→控制面）。
+type TrafficReportData struct {
+	Records []stats.Record `json:"records"`
+}
+
+// FilePayload 是 file_push 消息中的单个文件载荷（控制面→Agent）。
+type FilePayload struct {
+	Path    string `json:"path"`    // 相对 dataDir 的路径（如 etc/certs/<id>.crt）
+	Content []byte `json:"content"` // 文件字节内容
+	Mode    uint32 `json:"mode"`    // 文件权限（unix mode，如 0o644）
+}
+
 // Handlers 是 client 对控制面下发指令的回调。
 type Handlers struct {
 	OnConfigPush func(version int, content []byte) ApplyResult
 	OnRestart    func() error
+	OnFilePush   func(files []FilePayload) error
 }
 
 // Client 是 Agent WS 客户端。
@@ -229,6 +245,20 @@ func (c *Client) dispatch(ctx context.Context, env Envelope) {
 		}
 		res.Version = d.Version
 		_ = c.sendResult(res)
+	case msgFilePush:
+		var d struct {
+			Files []FilePayload `json:"files"`
+		}
+		if err := json.Unmarshal(env.Data, &d); err != nil {
+			c.log.Warn("bad file_push", zap.Error(err))
+			return
+		}
+		c.log.Info("收到 file_push", zap.Int("files", len(d.Files)))
+		if c.handlers.OnFilePush != nil {
+			if err := c.handlers.OnFilePush(d.Files); err != nil {
+				c.log.Warn("file_push 写入失败", zap.Error(err))
+			}
+		}
 	case msgRestart:
 		c.log.Info("收到 restart")
 		if c.handlers.OnRestart != nil {
@@ -255,6 +285,16 @@ func (c *Client) sendResult(res ApplyResult) error {
 		ID:   uuid.New().String(),
 		TS:   time.Now().Unix(),
 		Data: mustJSON(res),
+	})
+}
+
+// SendTraffic 上报流量记录（复用 send 发统一信封，线程安全）。
+func (c *Client) SendTraffic(records []stats.Record) error {
+	return c.send(Envelope{
+		Type: msgTrafficReport,
+		ID:   uuid.New().String(),
+		TS:   time.Now().Unix(),
+		Data: mustJSON(TrafficReportData{Records: records}),
 	})
 }
 

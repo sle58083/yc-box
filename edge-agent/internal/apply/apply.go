@@ -86,16 +86,16 @@ func (a *Applyer) Apply(ctx context.Context, content []byte) (string, bool, erro
 
 	// 4. 生效：若 sing-box 尚未运行（首次下发）则 Start，否则 Reload 热更新。
 	graceful, err := a.sup.Reload(ctx)
-	if errors.Is(err, proc.ErrNotRunning) {
-		// 首次下发：sing-box 未启动，改为冷启动。
+	if errors.Is(err, proc.ErrNotRunning) || err != nil {
+		// 两种情况都尝试冷启动兜底：
+		//  - ErrNotRunning：sing-box 从未启动（首次下发）
+		//  - 其他错误（如进程已死但 rt 未清空、reload 失败）：冷启动用新配置拉起
+		// 先尝试 Start，成功则视为已生效；Start 失败才回滚。
 		if serr := a.sup.Start(ctx); serr != nil {
 			_ = a.rollback(ctx)
 			return StatusRolledBack, false, serr
 		}
 		graceful = false
-	} else if err != nil {
-		_ = a.rollback(ctx)
-		return StatusRolledBack, graceful, err
 	}
 
 	// 5. 健康探测。

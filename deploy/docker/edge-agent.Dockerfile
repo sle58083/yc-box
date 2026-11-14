@@ -2,8 +2,8 @@
 # 边缘 Agent（Edge Agent）镜像：多阶段构建，静态编译 + 精简运行镜像。
 # 构建上下文为仓库根目录（见 deploy/docker-compose.yml 的 build.context）。
 
-# ---------- 构建阶段 ----------
-FROM golang:1.22-alpine AS build
+# ---------- 构建阶段 1：编译 edge-agent ----------
+FROM golang:1.22-alpine AS build-agent
 
 WORKDIR /src
 
@@ -17,33 +17,56 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
       -o /out/edge-agent \
       ./cmd/agent
 
+# ---------- 构建阶段 2：编译 sing-box（带 with_v2ray_api） ----------
+# 官方预编译二进制默认不含 v2ray_api（流量统计 gRPC 接口），故此处自编译。
+# sing-box v1.14.4 需 Go 1.25.5+，故用独立高版本 Go 阶段（与 edge-agent 的 Go 1.22 解耦）。
+FROM golang:1.26-alpine AS build-singbox
+
+ARG TARGETARCH
+ARG SINGBOX_VERSION=1.14.4
+# 官方默认 tags（release/DEFAULT_BUILD_TAGS）去掉 with_naive_outbound（需 cronet/Chromium CGO）
+# 和 with_tailscale（需 derp 特殊依赖），再加上 with_v2ray_api（流量统计 gRPC 接口）。
+# 这些 tag 在 CGO_ENABLED=0 纯静态交叉编译下均可构建。
+ARG SINGBOX_TAGS="with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_v2ray_api,with_ccm,with_ocm,with_cloudflared,with_usbip,with_openvpn,with_openconnect,badlinkname,tfogo_checklinkname0"
+ARG SINGBOX_LDFLAGS="-X runtime.godebugDefault=multipathtcp=0,tlssha1=1 -checklinkname=0"
+
+RUN apk add --no-cache git ca-certificates
+WORKDIR /singbox
+# 拉取指定版本源码（shallow clone 指定 tag，节省时间与体积）
+RUN git clone --depth 1 --branch "v${SINGBOX_VERSION}" https://github.com/SagerNet/sing-box.git . \
+    && go mod download
+
+# 交叉编译 sing-box（静态编译，兼容 glibc 运行环境）
+RUN case "${TARGETARCH}" in \
+      amd64) export GOARCH=amd64 ;; \
+      arm64) export GOARCH=arm64 ;; \
+      arm)   export GOARCH=arm GOARM=7 ;; \
+      *)     echo "unsupported TARGETARCH: ${TARGETARCH}"; exit 1 ;; \
+    esac && \
+    CGO_ENABLED=0 GOOS=linux go build \
+      -trimpath \
+      -tags "${SINGBOX_TAGS}" \
+      -ldflags "${SINGBOX_LDFLAGS} -s -w" \
+      -o /out/sing-box \
+      ./cmd/sing-box
+
 # ---------- 运行阶段 ----------
-# 用 debian-slim（glibc）而非 alpine（musl）：sing-box 官方二进制是 glibc 编译，
+# 用 debian-slim（glibc）而非 alpine（musl）：自编译 sing-box 是 glibc 环境编译，
 # 在 musl 上会报 "no such file or directory"（动态链接器缺失）。
 FROM debian:bookworm-slim
 
-# ca-certificates/wget/tzdata：下载 sing-box 内核、处理时区、entrypoint 依赖
+# ca-certificates/tzdata：处理时区、entrypoint 依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates wget tzdata \
+      ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# 内置 sing-box 内核二进制（单机部署必需：Agent 启动时内核即就位，无需运行时下载）。
-# 用 TARGETARCH 匹配多架构；放到 agent 期望的 bin/current 路径。
-# 版本可用 SINGBOX_VERSION 构建参数覆盖（默认跟随最新稳定版）。
 ARG TARGETARCH
-ARG SINGBOX_VERSION=1.14.4
-RUN mkdir -p /opt/singbox-agent/bin/current && \
-    case "${TARGETARCH}" in \
-      amd64) SB_ARCH="amd64" ;; \
-      arm64) SB_ARCH="arm64" ;; \
-      arm)   SB_ARCH="armv7" ;; \
-      *)     echo "unsupported TARGETARCH: ${TARGETARCH}"; exit 1 ;; \
-    esac && \
-    wget -q "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-${SB_ARCH}.tar.gz" -O /tmp/sing-box.tar.gz && \
-    tar -xzf /tmp/sing-box.tar.gz -C /tmp && \
-    mv "/tmp/sing-box-${SINGBOX_VERSION}-linux-${SB_ARCH}/sing-box" "/opt/singbox-agent/bin/current/sing-box-linux-${TARGETARCH}" && \
-    chmod +x "/opt/singbox-agent/bin/current/sing-box-linux-${TARGETARCH}" && \
-    rm -rf /tmp/sing-box.tar.gz "/tmp/sing-box-${SINGBOX_VERSION}-linux-${SB_ARCH}"
+
+# 内置 sing-box 内核二进制（单机部署必需：Agent 启动时内核即就位，无需运行时下载）。
+# 从 build-singbox 阶段复制；放到 agent 期望的 bin/current 路径。
+RUN mkdir -p /opt/singbox-agent/bin/current
+COPY --from=build-singbox /out/sing-box "/opt/singbox-agent/bin/current/sing-box-linux-${TARGETARCH}"
+RUN chmod +x "/opt/singbox-agent/bin/current/sing-box-linux-${TARGETARCH}"
 
 # entrypoint：把镜像内置内核同步到数据卷（若卷内缺失），再启动 agent。
 # 原因：compose 将 agent_data 卷挂载到 /opt/singbox-agent，会遮蔽镜像内置的
@@ -80,7 +103,7 @@ RUN chmod +x /entrypoint.sh
 # 数据目录（bin/etc/run/logs 布局），运行时挂卷持久化（compose 中 agent_data）
 WORKDIR /opt/singbox-agent
 
-COPY --from=build /out/edge-agent /usr/local/bin/edge-agent
+COPY --from=build-agent /out/edge-agent /usr/local/bin/edge-agent
 
 # 默认数据目录；可被 compose 的 SBAGENT_AGENT_DATADIR 覆盖
 ENV SBAGENT_AGENT_DATADIR=/opt/singbox-agent

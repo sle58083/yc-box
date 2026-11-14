@@ -53,7 +53,7 @@ func (s *Service) Ingest(ctx context.Context, nodeID uuid.UUID, records []Record
 	for _, r := range records {
 		var proxyUserID *uuid.UUID
 		if r.ProxyUserID != nil && *r.ProxyUserID != "" {
-			if id, err := s.resolveByUUID(ctx, *r.ProxyUserID); err == nil {
+			if id, err := s.resolveByID(ctx, *r.ProxyUserID); err == nil {
 				proxyUserID = &id
 			}
 		}
@@ -120,19 +120,12 @@ func window(q *gorm.DB, from, to *time.Time) *gorm.DB {
 	return q
 }
 
-// resolveByUUID 按明文 UUID 解析代理用户 ID（MVP：遍历解密匹配，用户量级小）。
-func (s *Service) resolveByUUID(ctx context.Context, plainUUID string) (uuid.UUID, error) {
-	var users []model.ProxyUser
-	if err := s.db.WithContext(ctx).Find(&users).Error; err != nil {
-		return uuid.Nil, err
+// resolveByID 按 proxy_user DB UUID 字符串解析代理用户 ID。
+// 采集端已直接把 sing-box 用户 name 设为 DB UUID，故直接 Parse，无需解密遍历。
+func (s *Service) resolveByID(_ context.Context, idStr string) (uuid.UUID, error) {
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("traffic: 非法的代理用户 ID %q: %w", idStr, err)
 	}
-	for _, u := range users {
-		if u.UUID == "" {
-			continue
-		}
-		if dec, err := s.codec.DecryptString(u.UUID); err == nil && dec == plainUUID {
-			return u.ID, nil
-		}
-	}
-	return uuid.Nil, fmt.Errorf("traffic: 未找到 UUID 对应的代理用户")
+	return id, nil
 }

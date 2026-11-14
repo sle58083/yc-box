@@ -27,6 +27,10 @@ type AgentConfig struct {
 	KeyFile string       `mapstructure:"key_file"` // 🔐 本地主密钥文件路径
 	Kernel  KernelConfig `mapstructure:"kernel"`
 	Proc    ProcConfig   `mapstructure:"proc"`
+
+	StatsAPI      string        `mapstructure:"stats_api"`      // sing-box v2ray_api gRPC 地址（固定 127.0.0.1:9001）
+	StatsInterval time.Duration `mapstructure:"stats_interval"` // 流量采集间隔（默认 10s）
+	StatsEnabled  bool          `mapstructure:"stats_enabled"`  // 是否启用流量采集（默认 true）
 }
 
 // KernelConfig 内核版本三元组与下载策略。
@@ -107,6 +111,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("agent.kernel.download_url", "")
 	v.SetDefault("agent.proc.stop_grace", "10s")
 	v.SetDefault("agent.proc.health_interval", "3s")
+	v.SetDefault("agent.stats_api", "127.0.0.1:9001")
+	v.SetDefault("agent.stats_interval", "10s")
+	v.SetDefault("agent.stats_enabled", true)
 
 	v.SetDefault("control.server_url", "")
 	v.SetDefault("control.token", "")
@@ -130,6 +137,12 @@ func applyDerivedDefaults(cfg *Config) error {
 	}
 	if cfg.Agent.Kernel.Arch == "" {
 		cfg.Agent.Kernel.Arch = "auto"
+	}
+	if cfg.Agent.StatsAPI == "" {
+		cfg.Agent.StatsAPI = "127.0.0.1:9001"
+	}
+	if cfg.Agent.StatsInterval == 0 {
+		cfg.Agent.StatsInterval = 10 * time.Second
 	}
 	if cfg.Control.ServerURL == "" {
 		return errors.New("config: control.server_url 必须配置（如 wss://panel.example.com/ws）")

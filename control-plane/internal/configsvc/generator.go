@@ -72,6 +72,12 @@ func (g *Generator) Generate(ctx *NodeConfigContext) (map[string]any, error) {
 		outbounds = append(outbounds, el)
 	}
 
+	// 兜底直连：无任何出站时注入默认 direct，避免 route.final="direct" 引用不存在的
+	// tag 导致 sing-box 启动失败（"default outbound not found: direct"）。
+	if len(outbounds) == 0 {
+		outbounds = append(outbounds, map[string]any{kType: "direct", kTag: "direct"})
+	}
+
 	// 3. tag 全局唯一断言（§9.8，跨 inbound/outbound 全量）。
 	if err := assertUniqueTags(inbounds, outbounds); err != nil {
 		return nil, err
@@ -79,12 +85,47 @@ func (g *Generator) Generate(ctx *NodeConfigContext) (map[string]any, error) {
 
 	// 4. 全局结构拼装。
 	doc := map[string]any{
-		kInbounds:  inbounds,
-		kOutbounds: outbounds,
+		kInbounds:     inbounds,
+		kOutbounds:    outbounds,
+		kExperimental: buildV2RayAPI(enabledInbounds, enabledOutbounds, ctx.ProxyUsers),
 	}
 	global.RouteFinal = resolveRouteFinal(outbounds)
 	applyGlobalTemplate(doc, global, ctx.Rules)
 	return doc, nil
+}
+
+// buildV2RayAPI 渲染 experimental.v2ray_api 节点（§3.2）：启用入站/出站 tag
+// 与活跃用户 name（= proxy_user DB UUID），供 edge-agent gRPC 采集流量。
+func buildV2RayAPI(inbounds []model.InboundConfig, outbounds []model.OutboundConfig, users []renderer.ProxyUser) map[string]any {
+	inboundTags := make([]string, 0, len(inbounds))
+	for _, c := range inbounds {
+		if c.Name != "" {
+			inboundTags = append(inboundTags, c.Name)
+		}
+	}
+	outboundTags := make([]string, 0, len(outbounds))
+	for _, c := range outbounds {
+		if c.Name != "" {
+			outboundTags = append(outboundTags, c.Name)
+		}
+	}
+	userNames := make([]string, 0, len(users))
+	for _, u := range users {
+		if u.Name != "" {
+			userNames = append(userNames, u.Name)
+		}
+	}
+	return map[string]any{
+		"v2ray_api": map[string]any{
+			"listen": "127.0.0.1:9001",
+			"stats": map[string]any{
+				"enabled":   true,
+				"inbounds":  inboundTags,
+				"outbounds": outboundTags,
+				"users":     userNames,
+			},
+		},
+	}
 }
 
 // assertUniqueTags 断言 inbounds[] 与 outbounds[] 的 tag 全局唯一。

@@ -4,6 +4,7 @@ package configsvc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -260,6 +261,23 @@ func (s *Service) aggregate(ctx context.Context, nodeID uuid.UUID) (*NodeConfigC
 }
 
 func (s *Service) aggregateInbounds(ctx context.Context, groupID, nodeID uuid.UUID) ([]model.InboundConfig, error) {
+	out, err := s.collectInbounds(ctx, groupID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if err := s.decryptInboundTLS(&out[i]); err != nil {
+			return nil, err
+		}
+		if err := s.resolveInboundCertPaths(ctx, &out[i]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// collectInbounds 合并分组模板与节点覆盖并过滤 disabled，不做解密/证书注入。
+func (s *Service) collectInbounds(ctx context.Context, groupID, nodeID uuid.UUID) ([]model.InboundConfig, error) {
 	var templates, overrides []model.InboundConfig
 	if err := s.db.WithContext(ctx).Where("group_id = ? AND node_id IS NULL", groupID).Find(&templates).Error; err != nil {
 		return nil, err
@@ -268,13 +286,108 @@ func (s *Service) aggregateInbounds(ctx context.Context, groupID, nodeID uuid.UU
 		return nil, err
 	}
 	merged := mergeInbounds(templates, overrides)
-	out := filterInbounds(merged)
-	for i := range out {
-		if err := s.decryptInboundTLS(&out[i]); err != nil {
+	return filterInbounds(merged), nil
+}
+
+// CertFile 是下发到节点的单个证书文件（相对 dataDir 的路径 + 明文内容）。
+type CertFile struct {
+	Path    string
+	Content []byte
+	Mode    uint32
+}
+
+// certDir 是 renderer 输出 / Agent 落盘的证书相对目录（sui-gap-design.md §9）。
+const certDir = "etc/certs"
+
+// certFilePath 返回证书文件的相对路径（固定前向斜杠，跨 OS 下发一致）。
+func certFilePath(id uuid.UUID) string { return certDir + "/" + id.String() + ".crt" }
+
+// certKeyPath 返回私钥文件的相对路径。
+func certKeyPath(id uuid.UUID) string { return certDir + "/" + id.String() + ".key" }
+
+// resolveInboundCertPaths 在 TLS 解密后注入绑定证书的相对路径，并校验证书可解密。
+//
+// 证书存在性在 validate.go 保存前已保证；此处再次解密兜底（防密钥轮换 / 手动删库）。
+func (s *Service) resolveInboundCertPaths(ctx context.Context, cfg *model.InboundConfig) error {
+	if cfg.CertID == nil {
+		return nil
+	}
+	if _, err := s.loadCertFiles(ctx, *cfg.CertID); err != nil {
+		return fmt.Errorf("configsvc: 入站 %q 绑定证书不可用: %w", cfg.Name, err)
+	}
+
+	m, err := parseTLSMap(cfg.TLS)
+	if err != nil {
+		return err
+	}
+	m["certificate_path"] = certFilePath(*cfg.CertID)
+	m["key_path"] = certKeyPath(*cfg.CertID)
+	m["enabled"] = true
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("configsvc: 序列化入站 tls 失败: %w", err)
+	}
+	cfg.TLS = raw
+	return nil
+}
+
+// NodeCertFiles 返回节点所有入站绑定证书的文件内容（去重，供 file_push 下发）。
+func (s *Service) NodeCertFiles(ctx context.Context, nodeID uuid.UUID) ([]CertFile, error) {
+	var node model.Node
+	if err := s.db.WithContext(ctx).First(&node, "id = ?", nodeID).Error; err != nil {
+		return nil, fmt.Errorf("configsvc: 节点不存在: %w", err)
+	}
+	inbounds, err := s.collectInbounds(ctx, node.GroupID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := map[uuid.UUID]bool{}
+	var files []CertFile
+	for _, in := range inbounds {
+		if in.CertID == nil || seen[*in.CertID] {
+			continue
+		}
+		seen[*in.CertID] = true
+		fs, err := s.loadCertFiles(ctx, *in.CertID)
+		if err != nil {
 			return nil, err
 		}
+		files = append(files, fs...)
 	}
-	return out, nil
+	return files, nil
+}
+
+// loadCertFiles 解密单个证书，返回证书 + 私钥两个文件载荷。
+func (s *Service) loadCertFiles(ctx context.Context, certID uuid.UUID) ([]CertFile, error) {
+	var c model.Certificate
+	if err := s.db.WithContext(ctx).First(&c, "id = ?", certID).Error; err != nil {
+		return nil, fmt.Errorf("configsvc: 证书 %s 不存在: %w", certID, err)
+	}
+	certPEM, err := s.codec.DecryptField(c.CertPEM)
+	if err != nil {
+		return nil, fmt.Errorf("configsvc: 解密证书失败: %w", err)
+	}
+	keyPEM, err := s.codec.DecryptField(c.KeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("configsvc: 解密私钥失败: %w", err)
+	}
+	return []CertFile{
+		{Path: certFilePath(certID), Content: []byte(certPEM), Mode: 0o644},
+		{Path: certKeyPath(certID), Content: []byte(keyPEM), Mode: 0o600},
+	}, nil
+}
+
+// parseTLSMap 解析 tls JSONB 为 map；空 / null 返回空 map。
+func parseTLSMap(raw json.RawMessage) (map[string]any, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return map[string]any{}, nil
+	}
+	m := map[string]any{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("configsvc: 解析入站 tls 失败: %w", err)
+	}
+	return m, nil
 }
 
 func (s *Service) aggregateOutbounds(ctx context.Context, groupID, nodeID uuid.UUID) ([]model.OutboundConfig, error) {
@@ -326,11 +439,12 @@ func (s *Service) activeProxyUsers(ctx context.Context, groupID uuid.UUID) ([]re
 
 // decryptProxyUser 将落库的代理用户解密为渲染视图（UUID 与协议密码均为可逆 🔐）。
 func decryptProxyUser(u model.ProxyUser, codec *crypto.Codec) renderer.ProxyUser {
-	pu := renderer.ProxyUser{ID: u.ID.String()}
+	// Name 即 sing-box 用户标识，取 proxy_user 的 DB UUID，便于采集端解析
+	// user>>>{uuid} 直接映射到用户 ID（§9 共享知识）。
+	pu := renderer.ProxyUser{ID: u.ID.String(), Name: u.ID.String()}
 	if u.UUID != "" {
 		if plain, err := codec.DecryptString(u.UUID); err == nil {
 			pu.UUID = plain
-			pu.Name = "user-" + firstN(plain, 4)
 		}
 	}
 	// 密码类协议（trojan/hysteria2/tuic/anytls）需明文密码注入订阅/下发。
@@ -476,11 +590,4 @@ func normalizeOutbound(cfg *model.OutboundConfig) {
 	if cfg.Status == "" {
 		cfg.Status = model.StatusEnabled
 	}
-}
-
-func firstN(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }
