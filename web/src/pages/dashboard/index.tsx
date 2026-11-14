@@ -10,13 +10,13 @@ export default function Dashboard() {
   const [traffic, setTraffic] = useState<NodeStat[]>([])
 
   useEffect(() => {
-    nodesApi.listNodes().then(setNodes).catch(() => setNodes([]))
-    trafficApi.nodeTraffic({}).then(setTraffic).catch(() => setTraffic([]))
+    nodesApi.listNodes().then((v) => setNodes(v ?? [])).catch(() => setNodes([]))
+    trafficApi.nodeTraffic({}).then((v) => setTraffic(v ?? [])).catch(() => setTraffic([]))
   }, [])
 
   const online = nodes.filter((n) => n.status === 'online').length
-  const totalUp = traffic.reduce((s, t) => s + t.up_bytes, 0)
-  const totalDown = traffic.reduce((s, t) => s + t.down_bytes, 0)
+  const totalUp = (traffic ?? []).reduce((s, t) => s + t.up_bytes, 0)
+  const totalDown = (traffic ?? []).reduce((s, t) => s + t.down_bytes, 0)
 
   return (
     <div>

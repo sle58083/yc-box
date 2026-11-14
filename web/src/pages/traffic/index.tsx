@@ -9,12 +9,12 @@ export default function Traffic() {
   const [users, setUsers] = useState<UserStat[]>([])
 
   useEffect(() => {
-    api.nodeTraffic({}).then(setNodes).catch(() => setNodes([]))
-    api.userTraffic({}).then(setUsers).catch(() => setUsers([]))
+    api.nodeTraffic({}).then((v) => setNodes(v ?? [])).catch(() => setNodes([]))
+    api.userTraffic({}).then((v) => setUsers(v ?? [])).catch(() => setUsers([]))
   }, [])
 
-  const nodeUp = nodes.reduce((s, t) => s + t.up_bytes, 0)
-  const nodeDown = nodes.reduce((s, t) => s + t.down_bytes, 0)
+  const nodeUp = (nodes ?? []).reduce((s, t) => s + t.up_bytes, 0)
+  const nodeDown = (nodes ?? []).reduce((s, t) => s + t.down_bytes, 0)
 
   return (
     <div>

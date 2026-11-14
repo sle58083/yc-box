@@ -87,7 +87,7 @@ func (s *Service) NodeTraffic(ctx context.Context, nodeID *uuid.UUID, from, to *
 		q = q.Where("node_id = ?", *nodeID)
 	}
 	q = window(q, from, to)
-	var out []NodeStat
+	out := make([]NodeStat, 0) // 空表时返回 [] 而非 nil，避免前端对 null 调用 reduce
 	if err := q.Scan(&out).Error; err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (s *Service) UserTraffic(ctx context.Context, proxyUserID *uuid.UUID, from,
 		q = q.Where("proxy_user_id = ?", *proxyUserID)
 	}
 	q = window(q, from, to)
-	var out []UserStat
+	out := make([]UserStat, 0) // 空表时返回 [] 而非 nil
 	if err := q.Scan(&out).Error; err != nil {
 		return nil, err
 	}
