@@ -104,8 +104,10 @@ json_field() {
     return 0
   fi
   if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$json" | python3 - "$path" <<'PY'
-import sys, json
+    # 注意：不能用 heredoc 传代码（会与管道 stdin 冲突），改用 -c 传脚本，
+    # JSON 经 stdin 传入，路径经 argv 传入。
+    printf '%s' "$json" | python3 -c '
+import sys, json, re
 raw = sys.stdin.read().strip()
 if not raw:
     sys.exit(0)
@@ -114,22 +116,63 @@ try:
 except Exception:
     sys.exit(0)
 cur = data
-for part in sys.argv[1].split('.'):
-    if part.startswith('[') and part.endswith(']'):
-        cur = cur[int(part[1:-1])]
-    else:
-        if not isinstance(cur, dict) or part not in cur:
+for part in sys.argv[1].split("."):
+    if not part:
+        continue
+    # 支持 key[index] 形式（如 data[0]）与 [index] 形式
+    m = re.match(r"^([^\[\]]*)(\[[0-9]+\])?$", part)
+    if not m:
+        sys.exit(0)
+    key, idx = m.group(1), m.group(2)
+    if key:
+        if not isinstance(cur, dict) or key not in cur:
             sys.exit(0)
-        cur = cur[part]
+        cur = cur[key]
+    if idx:
+        i = int(idx[1:-1])
+        if not isinstance(cur, list) or i >= len(cur):
+            sys.exit(0)
+        cur = cur[i]
 if isinstance(cur, str):
     print(cur)
 else:
     print(json.dumps(cur))
-PY
+' "$path"
     return 0
   fi
   leaf="${path##*.}"
   printf '%s' "$json" | sed -n 's/.*"'"$leaf"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+}
+
+# 检测端口是否被占用（ss 优先，netstat/lsof 兜底；精确匹配整端口，避免 8080 误判 80808）
+is_port_in_use() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn 2>/dev/null | awk '{print $4}' | grep -E "[:.]${port}[[:space:]]*$" >/dev/null 2>&1 && return 0
+  fi
+  if command -v netstat >/dev/null 2>&1; then
+    netstat -lnt 2>/dev/null | awk '{print $4}' | grep -E "[:.]${port}[[:space:]]*$" >/dev/null 2>&1 && return 0
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+
+# 在范围内挑选一个空闲端口（优先返回原端口；被占用则在 40001-60000 随机挑选，尝试 N 次）
+pick_port() {
+  local preferred="$1" attempt port
+  if ! is_port_in_use "$preferred"; then
+    printf '%s' "$preferred"; return 0
+  fi
+  for attempt in $(seq 1 30); do
+    port=$(( RANDOM % 20000 + 40001 ))   # 40001-60000 随机
+    if ! is_port_in_use "$port"; then
+      printf '%s' "$port"; return 0
+    fi
+  done
+  printf '%s' "$preferred"   # 实在找不到空闲端口，回退原端口（由 docker 报错提示）
+  return 1
 }
 
 # 探测服务器对外 IP（优先环境变量，其次公网探测，最后网卡地址）
@@ -324,17 +367,203 @@ ensure_compose() {
   die "未检测到 Docker Compose。请安装 docker compose 插件（https://docs.docker.com/compose/install/）"
 }
 
+# ------------------------------------------------------------------------------
+# Swap 保障：小内存机器（< 1.5GB 且无有效 swap）自动创建 1GB swap 文件，避免 OOM
+# ------------------------------------------------------------------------------
+
+# 确保存在本脚本创建的 swap：小内存机器创建 → mkswap → swapon → 写入 /etc/fstab。
+# 幂等：已有系统 swap 或本脚本 swap 已启用时跳过；内存 >= 1536MB 时跳过。
+ensure_swap() {
+  local mem_mb swapfile="${INSTALL_DIR}/swapfile"
+  mem_mb="$(awk '/MemTotal:/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)"
+
+  # 内存 >= 1536MB 时无需额外 swap
+  if [ "${mem_mb:-0}" -ge 1536 ]; then
+    info "内存充足（${mem_mb}MB），无需自动创建 swap"
+    return 0
+  fi
+
+  # 已有有效 swap（含系统既有 swap，/proc/swaps 首行为表头）时不再重复创建
+  if [ "$(awk 'END{print NR}' /proc/swaps 2>/dev/null || echo 1)" -gt 1 ]; then
+    info "系统已有有效 swap，跳过自动创建"
+    return 0
+  fi
+
+  warn "内存仅 ${mem_mb}MB 且无有效 swap，自动创建 1GB swap 文件（${swapfile}）以降低 OOM 风险 ..."
+  mkdir -p "$INSTALL_DIR" || { warn "创建安装目录失败，跳过 swap"; return 0; }
+
+  # 优先 fallocate（快速分配），回退 dd（兼容不支持 fallocate 的文件系统）
+  if [ ! -s "$swapfile" ]; then
+    if command -v fallocate >/dev/null 2>&1; then
+      fallocate -l 1G "$swapfile" 2>/dev/null || rm -f "$swapfile"
+    fi
+    if [ ! -s "$swapfile" ]; then
+      dd if=/dev/zero of="$swapfile" bs=1M count=1024 status=none 2>/dev/null \
+        || { rm -f "$swapfile"; warn "创建 swap 文件失败，跳过 swap"; return 0; }
+    fi
+  fi
+
+  chmod 600 "$swapfile" 2>/dev/null || true
+  mkswap "$swapfile" >/dev/null 2>&1 || { warn "mkswap 失败，跳过 swap"; return 0; }
+  swapon "$swapfile" 2>/dev/null || { warn "swapon 失败，跳过 swap"; return 0; }
+
+  # 写入 /etc/fstab（带标记，purge 时按标记识别并清理）
+  if ! grep -qF "$swapfile" /etc/fstab 2>/dev/null; then
+    if [ "$(id -u)" = "0" ]; then
+      printf '\n# yc-box-swap: 由 install.sh 自动创建，purge 时自动清理\n%s none swap sw 0 0\n' "$swapfile" >> /etc/fstab 2>/dev/null \
+        || warn "写入 /etc/fstab 失败（重启后 swap 不会自动挂载）"
+    else
+      warn "非 root，跳过写入 /etc/fstab（重启后 swap 不会自动挂载）"
+    fi
+  fi
+
+  info "swap 创建并启用完成（1GB @ ${swapfile}）"
+}
+
+# 清理本脚本创建的 swap（仅按 # yc-box-swap 标记匹配 fstab 行，不回滚系统既有 swap）。
+# 供 --uninstall --purge 调用。
+cleanup_swap() {
+  local swapfile="${INSTALL_DIR}/swapfile"
+  [ -f /etc/fstab ] || { rm -f "$swapfile" 2>/dev/null; return 0; }
+
+  # 仅在存在本脚本标记时处理，避免误删系统既有 swap
+  if grep -q '# yc-box-swap' /etc/fstab 2>/dev/null; then
+    # 提取标记行下一行（挂载行）的设备路径，即本脚本写入的 swap 文件路径
+    swapfile="$(awk '/# yc-box-swap/{getline; print $1; exit}' /etc/fstab 2>/dev/null || true)"
+    [ -n "$swapfile" ] || swapfile="${INSTALL_DIR}/swapfile"
+
+    # 若该文件当前已启用，先关闭（忽略未启用/关闭失败）
+    if awk 'NR>1{print $1}' /proc/swaps 2>/dev/null | grep -qFx "$swapfile"; then
+      swapoff "$swapfile" 2>/dev/null || warn "swapoff 失败：${swapfile}"
+    fi
+
+    # 移除标记行及其紧邻的挂载行
+    if [ "$(id -u)" = "0" ]; then
+      sed -i '/# yc-box-swap/,+1d' /etc/fstab 2>/dev/null || warn "更新 /etc/fstab 失败"
+    else
+      warn "非 root，跳过更新 /etc/fstab（请手动移除 # yc-box-swap 相关行）"
+    fi
+  fi
+
+  # 删除本脚本创建的 swap 文件（幂等）
+  if [ -f "$swapfile" ]; then
+    rm -f "$swapfile" 2>/dev/null && info "已删除本脚本创建的 swap 文件（${swapfile}）"
+  fi
+}
+
+# ------------------------------------------------------------------------------
+# 防火墙保障：自动放行面板端口 + 节点入站端口范围（ufw / firewalld），
+# 使节点开箱即用，无需用户手动开放端口。
+# ------------------------------------------------------------------------------
+
+# 解析节点入站端口范围（NODE_PORT_RANGE），输出形如 "10000-10100" 或 "10000"。
+# 支持 "10000-10100"、"443:443"、"10000-10100,443" 等；取端口段的首尾用于放行。
+node_port_span() {
+  local range="${1:-10000-10100}" part first last
+  # 去掉 "443:443" 中的冒号宿主侧，只保留容器内端口；多个逗号段取第一个
+  part="${range%%,*}"
+  part="${part##*:}"
+  first="${part%%-*}"
+  last="${part##*-}"
+  [ -n "$last" ] || last="$first"
+  printf '%s %s' "$first" "$last"
+}
+
+# 放行端口（tcp + udp）。firewalld 用 --permanent 持久化；ufw 直接 allow。
+open_firewall() {
+  local public_port="${1:-80}" node_range="${2:-10000-10100}" first last
+  read -r first last <<EOF
+$(node_port_span "$node_range")
+EOF
+
+  # firewalld
+  if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+    info "检测到 firewalld，放行面板端口 ${public_port}/tcp 与节点端口 ${first}-${last}（tcp+udp）..."
+    firewall-cmd --permanent --add-port="${public_port}/tcp" >/dev/null 2>&1 || true
+    if [ "$first" = "$last" ]; then
+      firewall-cmd --permanent --add-port="${first}/tcp" >/dev/null 2>&1 || true
+      firewall-cmd --permanent --add-port="${first}/udp" >/dev/null 2>&1 || true
+    else
+      firewall-cmd --permanent --add-port="${first}-${last}/tcp" >/dev/null 2>&1 || true
+      firewall-cmd --permanent --add-port="${first}-${last}/udp" >/dev/null 2>&1 || true
+    fi
+    firewall-cmd --reload >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  # ufw
+  if command -v ufw >/dev/null 2>&1; then
+    info "检测到 ufw，放行面板端口 ${public_port}/tcp 与节点端口 ${first}-${last}（tcp+udp）..."
+    ufw allow "${public_port}/tcp" >/dev/null 2>&1 || true
+    if [ "$first" = "$last" ]; then
+      ufw allow "${first}/tcp" >/dev/null 2>&1 || true
+      ufw allow "${first}/udp" >/dev/null 2>&1 || true
+    else
+      ufw allow "${first}:${last}/tcp" >/dev/null 2>&1 || true
+      ufw allow "${first}:${last}/udp" >/dev/null 2>&1 || true
+    fi
+    return 0
+  fi
+
+  # 无 firewalld/ufw：不拦截（i ptables 裸规则或已禁用防火墙），提示用户自行确认
+  warn "未检测到 ufw/firewalld，跳过防火墙放行；请确认服务器防火墙已开放面板端口 ${public_port} 与节点端口 ${first}-${last}"
+  return 0
+}
+
 check_deps() {
   command -v curl >/dev/null 2>&1 || die "未检测到 curl，请先安装（apt-get install curl / yum install curl）"
   ensure_docker
   ensure_compose
 }
 
+# 镜像拉取失败时，依次尝试国内加速源（ghcr.io → 国内镜像加速前缀）
+# 通过改写 IMAGE_PREFIX 环境变量实现，不改动 docker-compose.yml。
+pull_with_mirror() {
+  local prefix tag services mirror mirrors resolved_prefix i service
+  prefix="$(env_get IMAGE_PREFIX)"; [ -n "$prefix" ] || prefix="ghcr.io/sle58083"
+  tag="$(env_get IMAGE_TAG)"; [ -n "$tag" ] || tag="latest"
+
+  # 仅当镜像前缀指向 ghcr.io 时才尝试加速（自建仓库无需加速）
+  case "$prefix" in
+    ghcr.io/*) : ;;
+    *) warn "IMAGE_PREFIX 非 ghcr.io，跳过国内加速源回退"; return 1 ;;
+  esac
+
+  # 国内 ghcr 加速镜像前缀（ghcr.io/<owner> → <mirror>/<owner>）
+  mirrors="ghcr.dockerproxy.com ghcr.nju.edu.cn ghcr.io.dockerpull.org"
+
+  # 读取 compose 中定义的三个服务名
+  services="control-plane web edge-agent"
+
+  for mirror in $mirrors; do
+    resolved_prefix="$(printf '%s' "$prefix" | sed "s|^ghcr.io/|${mirror}/|")"
+    info "尝试国内加速源：${resolved_prefix} ..."
+    for service in $services; do
+      if ! docker pull "${resolved_prefix}/singbox-panel-${service}:${tag}" >/dev/null 2>&1; then
+        break
+      fi
+    done
+    # 三个服务都拉取成功
+    if [ "$service" = "edge-agent" ]; then
+      info "国内加速源 ${mirror} 拉取成功，重打标签为原镜像名"
+      for service in $services; do
+        docker tag "${resolved_prefix}/singbox-panel-${service}:${tag}" "${prefix}/singbox-panel-${service}:${tag}" >/dev/null 2>&1 || true
+      done
+      return 0
+    fi
+  done
+
+  warn "所有国内加速源均失败"
+  return 1
+}
+
 # 定位部署目录与文件（本地源码优先，否则下载）
+# 设置全局 LOCAL_SRC=1 表示本地源码模式（应本地 build 而非 pull 预构建镜像）。
 ensure_files() {
   if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/docker-compose.yml" ] && [ -f "$SCRIPT_DIR/.env.example" ]; then
     # 本地源码模式：直接使用仓库内 deploy/ 目录（build.context=仓库根目录）
     DEPLOY_DIR="$SCRIPT_DIR"
+    LOCAL_SRC=1
     info "检测到本地部署文件（${DEPLOY_DIR}），使用本地源码模式"
     return 0
   fi
@@ -374,8 +603,12 @@ ensure_env() {
   if [ -z "$(env_get ADMIN_PASSWORD)" ]; then
     env_set ADMIN_PASSWORD "$adminpass"
   fi
+  # 面板路径随机化：首次部署生成 8 字节随机 hex 隐藏面板入口；已存在则保留（幂等）
+  if [ -z "$(env_get PANEL_PATH)" ]; then
+    env_set PANEL_PATH "$(rand_hex 8)"
+  fi
   chmod 600 "$ENV_FILE"
-  info "已生成 ${ENV_FILE}（含随机 CRYPTO_KEY / JWT_SECRET / ADMIN_PASSWORD）"
+  info "已生成 ${ENV_FILE}（含随机 CRYPTO_KEY / JWT_SECRET / ADMIN_PASSWORD / PANEL_PATH）"
 }
 
 # ------------------------------------------------------------------------------
@@ -430,17 +663,44 @@ provision_node() {
 # ------------------------------------------------------------------------------
 
 do_install() {
+  ensure_swap
   check_deps
   ensure_files
   ensure_env
   cd "$DEPLOY_DIR"
 
-  local public_port
+  local public_port resolved_port panel_path
   public_port="$(env_get PUBLIC_PORT)"; [ -n "$public_port" ] || public_port=80
 
-  # 1) 优先拉取预构建镜像（已发布时）；失败静默，交由本地 build 兜底
-  info "拉取镜像（若已发布）..."
-  $COMPOSE pull >/dev/null 2>&1 || warn "拉取预构建镜像失败，将回退到本地构建（请确认 IMAGE_PREFIX 已指向已发布的镜像仓库，或本目录存在源码）"
+  # 端口冲突检测：PUBLIC_PORT 被占用时自动迁移到空闲端口并回写 .env（对齐 s-ui 体验）
+  if is_port_in_use "$public_port"; then
+    resolved_port="$(pick_port "$public_port")"
+    if [ "$resolved_port" != "$public_port" ]; then
+      warn "端口 ${public_port} 已被占用，自动迁移面板端口为 ${resolved_port}"
+      env_set PUBLIC_PORT "$resolved_port"
+      public_port="$resolved_port"
+    else
+      warn "端口 ${public_port} 已被占用，且未找到空闲端口；请手动修改 ${ENV_FILE} 中的 PUBLIC_PORT"
+    fi
+  fi
+
+  # 防火墙放行：面板端口 + 节点入站端口范围（ufw/firewalld），使节点开箱即用
+  open_firewall "$public_port" "$(env_get NODE_PORT_RANGE)"
+
+  # 1) 镜像策略：
+  #    - 本地源码模式（LOCAL_SRC=1）：直接 build（当前源码），绝不 pull，避免拉到 GHCR 旧镜像覆盖新代码
+  #    - 下载模式：优先 pull 预构建镜像；失败依次尝试国内加速源，最后回退本地 build
+  if [ "${LOCAL_SRC:-0}" = "1" ]; then
+    info "本地源码模式：直接构建镜像（跳过拉取预构建镜像）..."
+    $COMPOSE build >/dev/null 2>&1 || warn "本地构建镜像失败，请检查源码与构建上下文"
+  else
+    info "拉取镜像（若已发布）..."
+    if ! $COMPOSE pull >/dev/null 2>&1; then
+      if ! pull_with_mirror; then
+        warn "拉取预构建镜像失败（含国内加速源），将回退到本地构建（请确认 IMAGE_PREFIX 已指向已发布的镜像仓库，或本目录存在源码）"
+      fi
+    fi
+  fi
 
   # 2) 先启动核心服务（不含 edge-agent），等待健康
   info "启动核心服务（control-plane/web）..."
@@ -468,7 +728,13 @@ do_install() {
   # 5) 输出访问信息
   echo ""
   info "部署完成！"
-  echo "  面板地址 : http://$(get_public_ip):${public_port}"
+  panel_path="$(env_get PANEL_PATH)"
+  if [ -n "$panel_path" ]; then
+    echo "  面板地址 : http://$(get_public_ip):${public_port}/${panel_path}/"
+    echo "  （已启用面板路径随机化，请收藏完整地址；根路径访问会返回 404）"
+  else
+    echo "  面板地址 : http://$(get_public_ip):${public_port}"
+  fi
   echo "  初始账号 : $(env_get ADMIN_USERNAME)"
   echo "  初始密码 : $(env_get ADMIN_PASSWORD)"
   echo "  配置目录 : ${DEPLOY_DIR}"
@@ -495,8 +761,10 @@ do_update() {
 do_uninstall() {
   check_deps
   # 定位部署目录（本地源码优先，否则默认安装目录）；不下载文件
+  LOCAL_SRC=0
   if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/docker-compose.yml" ]; then
     DEPLOY_DIR="$SCRIPT_DIR"
+    LOCAL_SRC=1
   else
     DEPLOY_DIR="$INSTALL_DIR"
   fi
@@ -512,8 +780,13 @@ do_uninstall() {
   if [ "${PURGE:-0}" = "1" ]; then
     warn "清除数据卷、.env 与安装目录（不可恢复）..."
     $COMPOSE down -v || true
+    cleanup_swap
     rm -f "$DEPLOY_DIR/.env"
-    rm -f "$DEPLOY_DIR/docker-compose.yml" "$DEPLOY_DIR/.env.example"
+    # 仅当走下载模式（DEPLOY_DIR=INSTALL_DIR）时才删除下载的 compose/env 模板；
+    # 本地源码模式下 docker-compose.yml/.env.example 是仓库源码，不得删除。
+    if [ "${LOCAL_SRC:-0}" != "1" ]; then
+      rm -f "$DEPLOY_DIR/docker-compose.yml" "$DEPLOY_DIR/.env.example"
+    fi
     info "已清理 ${DEPLOY_DIR}（数据卷已删除）"
   else
     info "已停止并删除容器。数据卷与 ${DEPLOY_DIR}/.env 已保留；如需彻底清除请使用 --uninstall --purge"

@@ -18,10 +18,13 @@ curl -sSL https://raw.githubusercontent.com/sle58083/yc-box/main/deploy/install.
 1. 检查 Docker / Docker Compose（未安装时自动安装 Docker Engine 与 Compose v2 插件）；
 2. 下载 `docker-compose.yml` 与 `.env` 模板；
 3. 生成随机 `CRYPTO_KEY` / `JWT_SECRET` / `ADMIN_PASSWORD`；
-4. 启动 `control-plane` / `web`（数据落 SQLite 单文件，无需外部数据库）；
-5. 等待健康检查通过；
-6. 自动在面板创建单机节点并回填 `AGENT_TOKEN`，拉起 `edge-agent`；
-7. 输出访问地址与初始账号密码。
+4. **检测 `PUBLIC_PORT` 是否被占用**，被占用则自动迁移到空闲端口（40001-60000）并回写 `.env`；
+5. **自动放行防火墙**（ufw / firewalld）：面板端口 + 节点入站端口范围（`NODE_PORT_RANGE`），使节点开箱即用；
+6. 启动 `control-plane` / `web`（数据落 SQLite 单文件，无需外部数据库）；
+7. **镜像拉取失败时依次尝试国内加速源**（ghcr.dockerproxy.com / ghcr.nju.edu.cn / ghcr.io.dockerpull.org），仍失败回退本地构建；
+8. 等待健康检查通过；
+9. 自动在面板创建单机节点并回填 `AGENT_TOKEN`，拉起 `edge-agent`；
+10. 输出访问地址与初始账号密码。
 
 部署完成后输出形如：
 
@@ -144,4 +147,5 @@ ghcr.io/<owner>/singbox-panel-web:<tag>
 - **Agent 显示离线**：确认 `AGENT_TOKEN` 与面板节点令牌一致；可用 `--reprovision` 重建节点。
 - **入站端口不通**：面板入站端口必须落在 `NODE_PORT_RANGE`；改后需 `docker compose up -d edge-agent`。
 - **健康检查失败**：`docker compose logs control-plane` 查看，多为 `CRYPTO_KEY` 格式错误（须为 64 个 hex 字符）或 SQLite 数据卷权限问题。
-- **无法 pull 镜像**：确认已发布镜像且 `IMAGE_PREFIX` 正确；或改用第 6 节源码构建。
+- **无法 pull 镜像**：确认已发布镜像且 `IMAGE_PREFIX` 正确；脚本已内置国内加速源自动回退（ghcr.dockerproxy.com / ghcr.nju.edu.cn / ghcr.io.dockerpull.org），仍失败时改用第 6 节源码构建。
+- **面板端口被占用**：脚本会检测 `PUBLIC_PORT`，被占用时自动迁移到空闲端口（40001-60000）并回写 `.env`；也可手动改 `.env` 中的 `PUBLIC_PORT` 后 `docker compose up -d web`。

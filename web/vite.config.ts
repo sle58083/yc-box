@@ -4,6 +4,8 @@ import { defineConfig } from 'vite'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // 相对资源路径：使构建产物可挂载到任意子路径（配合面板路径随机化 PANEL_PATH）
+  base: './',
   plugins: [react()],
   resolve: {
     alias: {

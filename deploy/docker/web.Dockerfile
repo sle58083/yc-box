@@ -18,9 +18,14 @@ RUN npm run build
 # ---------- 运行阶段 ----------
 FROM nginx:alpine
 
-# 自定义 nginx 配置：静态托管 + /api/ 反代 + /ws/ WebSocket 反代
-COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
+# 自定义 nginx 配置模板 + 运行时入口脚本（envsubst 生成最终配置，支持 PANEL_PATH 随机化）
+COPY deploy/docker/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY deploy/docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]

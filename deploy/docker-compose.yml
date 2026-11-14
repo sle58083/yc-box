@@ -56,6 +56,9 @@ services:
     restart: unless-stopped
     ports:
       - "${PUBLIC_PORT:-80}:80"
+    environment:
+      # 面板路径随机化：随机 hex 隐藏面板入口；为空=根路径（兼容旧实例）
+      PANEL_PATH: ${PANEL_PATH:-}
     depends_on:
       control-plane:
         condition: service_healthy
