@@ -649,7 +649,7 @@ provision_node() {
   node_json="$(curl -fsS --max-time 10 -X POST "$api/nodes" \
     -H 'Content-Type: application/json' \
     -H "Authorization: Bearer $token" \
-    -d "{\"name\":\"$NODE_NAME\",\"group_id\":\"$group_id\",\"address\":\"127.0.0.1\"}")" || return 1
+    -d "{\"name\":\"$NODE_NAME\",\"group_id\":\"$group_id\",\"address\":\"$(detect_server_ip)\"}")" || return 1
   agent_token="$(json_field "$node_json" '.data.agent_token')"
   { [ -n "$agent_token" ] && [ "$agent_token" != "null" ]; } || { warn "创建节点失败：$(json_field "$node_json" '.message')"; return 1; }
 

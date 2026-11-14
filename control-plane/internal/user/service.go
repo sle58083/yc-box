@@ -40,10 +40,16 @@ func (s *Service) CreateProxyUser(ctx context.Context, u *model.ProxyUser, plain
 	}
 	u.UUID = encUUID
 
-	if plainPassword != "" {
-		if err := s.setPassword(u, plainPassword); err != nil {
+	// 协议密码：用户未提供时自动生成随机密码，保证 is_user_inbound 入站
+	// 始终有可用密码（否则 sing-box 校验报 "missing password"）。
+	if plainPassword == "" {
+		plainPassword, err = crypto.RandomToken(16)
+		if err != nil {
 			return "", err
 		}
+	}
+	if err := s.setPassword(u, plainPassword); err != nil {
+		return "", err
 	}
 
 	subToken, err := crypto.RandomToken(32)
