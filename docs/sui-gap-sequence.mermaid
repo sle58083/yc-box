@@ -1,0 +1,29 @@
+sequenceDiagram
+    autonumber
+    participant G as configsvc.Generator
+    participant SB as sing-box(子进程)
+    participant C as edge-agent stats.Collector
+    participant CL as edge-agent client
+    participant H as control-plane agent.Handler
+    participant T as traffic.Service
+    participant DB as SQLite
+    participant O as deploy.Orchestrator
+    participant AG as edge-agent
+
+    G->>G: 渲染 experimental.v2ray_api(stats.inbounds/outbounds/users)
+    G-->>SB: config.json 含 listen 127.0.0.1:9001
+
+    loop 每 10s（R1 采集）
+        C->>SB: gRPC QueryStats(reset=true, pattern="")
+        SB-->>C: [{name:"user>>>{uuid}>>>traffic>>>uplink", value:...}]
+        C->>C: 解析 name → 分类 user/inbound/outbound → []Record
+        C->>CL: SendTraffic(records)
+        CL->>H: WS traffic_report
+        H->>T: Ingest(nodeID, records)
+        T->>DB: 写入 traffic_record
+    end
+
+    Note over O,AG: R3 证书下发（自签 + 手动导入）复用 file_push
+    O->>AG: file_push(etc/certs/<id>.crt/.key)
+    O->>AG: config_push(引用相对路径)
+    AG->>SB: 写证书文件 + sing-box check + reload

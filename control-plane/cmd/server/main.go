@@ -19,6 +19,7 @@ import (
 	"github.com/singbox-panel/control-plane/internal/api"
 	"github.com/singbox-panel/control-plane/internal/audit"
 	"github.com/singbox-panel/control-plane/internal/auth"
+	"github.com/singbox-panel/control-plane/internal/cert"
 	"github.com/singbox-panel/control-plane/internal/config"
 	"github.com/singbox-panel/control-plane/internal/configsvc"
 	"github.com/singbox-panel/control-plane/internal/crypto"
@@ -93,6 +94,7 @@ func main() {
 	trafficSvc := traffic.NewService(db, codec)
 	auditSvc := audit.NewService(db)
 	groupSvc := group.NewService(db)
+	certSvc := cert.New(db, codec)
 
 	// 幂等初始化内置角色与默认分组。
 	if err := userSvc.SeedRoles(context.Background()); err != nil {
@@ -126,7 +128,7 @@ func main() {
 			log.Warn("ingest traffic failed", zap.Error(err))
 		}
 	})
-	apiHandler := api.NewHandler(cfgSvc, nodeSvc, orch, agentHandler, authSvc, userSvc, subSvc, trafficSvc, auditSvc, groupSvc)
+	apiHandler := api.NewHandler(cfgSvc, nodeSvc, orch, agentHandler, authSvc, userSvc, subSvc, trafficSvc, auditSvc, groupSvc, certSvc)
 
 	// 7. 启动 HTTP（业务路由 + WS + 健康检查）。
 	gin.SetMode(cfg.Server.Mode)

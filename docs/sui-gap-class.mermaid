@@ -1,0 +1,99 @@
+classDiagram
+    class Certificate {
+        +uuid ID
+        +string Name
+        +string Type
+        +string Domains
+        +string CertPEM
+        +string KeyPEM
+        +string Issuer
+        +time NotBefore
+        +time NotAfter
+        +string Status
+        +string LastError
+    }
+
+    class ProxyUser {
+        +uuid ID
+        +uuid GroupID
+        +string UUID
+        +string PasswordEnc
+        +int64 QuotaBytes
+        +int64 UsedBytes
+        +time ExpireAt
+        +string Status
+        +string SubTokenHash
+    }
+
+    class InboundConfig {
+        +uuid ID
+        +uuid GroupID
+        +uuid NodeID
+        +string Name
+        +string Type
+        +int Port
+        +json Settings
+        +json TLS
+        +json Transport
+        +bool IsUserInbound
+        +string Status
+        +uuid CertID
+    }
+
+    class TrafficRecord {
+        +time Ts
+        +uuid NodeID
+        +string InboundTag
+        +string OutboundTag
+        +uuid ProxyUserID
+        +int64 UpBytes
+        +int64 DownBytes
+    }
+
+    class stats_Collector {
+        -string statsAPI
+        +NewCollector(statsAPI) *Collector
+        +Collect(ctx) []Record
+    }
+
+    class client_Client {
+        -string token
+        +Run(ctx) error
+        +SendTraffic(records) error
+        +Handlers.OnFilePush([]FilePayload) error
+    }
+
+    class traffic_Service {
+        +Ingest(ctx, nodeID, records) error
+        +NodeTraffic(...) []NodeStat
+        +UserTraffic(...) []UserStat
+        -resolveByID(ctx, idStr) uuid
+    }
+
+    class cert_Service {
+        +CreateSelfSigned(ctx, name, domains, validDays) *Certificate
+        +ImportCert(ctx, name, certPEM, keyPEM) *Certificate
+        +List(ctx) []Certificate
+        +Delete(ctx, id) error
+    }
+
+    class configsvc_Service {
+        +CreateInbound/UpdateInbound()
+        +aggregate(ctx, nodeID) *NodeConfigContext
+        +Preview/CreateVersion()
+        +NodeCertFiles(ctx, nodeID) []CertFile
+        -resolveInboundCertPaths(cfg) error
+    }
+
+    class deploy_Orchestrator {
+        +Deploy(ctx, nodeID, operatorID) *ConfigVersion
+        -pushVersion(ctx, nodeID, v) error
+    }
+
+    InboundConfig "*" --> "0..1" Certificate : cert_id
+    ProxyUser "1" --> "*" TrafficRecord : proxy_user_id
+    cert_Service --> Certificate : 管理
+    configsvc_Service --> Certificate : 解析 cert 路径
+    deploy_Orchestrator --> configsvc_Service : NodeCertFiles
+    client_Client --> stats_Collector : SendTraffic
+    traffic_Service --> TrafficRecord : Ingest
