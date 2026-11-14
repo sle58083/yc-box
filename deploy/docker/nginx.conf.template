@@ -24,6 +24,12 @@ server {
         return 404;
     }
 
+    # 不带尾斜杠的面板路径：301 重定向到带尾斜杠（否则不匹配下方 location，会 404）
+    # 例如 /a1b2c3 -> /a1b2c3/（${PANEL_PATH_BARE} 为不带尾斜杠的路径）
+    location = ${PANEL_PATH_BARE} {
+        return 301 ${PANEL_PATH};
+    }
+
     # 面板 SPA：静态资源 + history 路由回退到 index.html
     # 使用 alias 将 /<PANEL_PATH>/ 映射到构建产物根目录，保证相对资源路径正确加载
     location ${PANEL_PATH} {
